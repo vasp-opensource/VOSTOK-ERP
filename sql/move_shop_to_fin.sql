@@ -2,7 +2,7 @@
 -- Отбор: Status_warehouse и пары Order_prod + Order_OTK по цели; списание с Quantity_on_shopfloor
 -- в Main: брак → Quantity_of_losses; отгрузка → Quantity_shipped; изделие → Quantity_implemented
 -- (в ТЗ иногда: Quantity_loss / Quantity_finised — здесь используются фактические имена колонок Main).
--- Транзакция: Status_transaction = Исполнено; Status_warehouse без изменения.
+-- Транзакция: Status_transaction = Исполнено; Status_warehouse и прочие реквизиты строки не меняем.
 -- Блокировка: lock_move_shop_to_fin
 -- Чтение Main: MAX+COUNT — без NOT FOUND при отсутствии строки (общий handler с курсором).
 
@@ -45,7 +45,7 @@ BEGIN
                AND t.Order_prod = 'Изготовлено'
                AND t.Order_OTK = 'Принято')
           )
-        ORDER BY t.ERP_ID, t.id;
+        ORDER BY t.id;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
 
@@ -92,15 +92,15 @@ BEGIN
                    m.Quantity_shipped      = m.Quantity_shipped + IF(v_where_to = 'отгрузка', v_qty, 0),
                    m.Quantity_implemented  = m.Quantity_implemented + IF(v_where_to = 'изделие', v_qty, 0),
                    m.updated_at            = CURRENT_TIMESTAMP,
-                  m.updated_by            = 'move_shop_to_fin'
+                   m.updated_by            = 'move_shop_to_fin'
              WHERE m.ERP_ID = v_erp_id;
 
             UPDATE `Transactions` t
                SET t.Status_transaction = 'Исполнено',
                    t.updated_at         = CURRENT_TIMESTAMP,
-                  t.updated_by         = CASE
-                                            WHEN t.updated_by IS NULL OR TRIM(COALESCE(t.updated_by, '')) = '' THEN 'move_shop_to_fin'
-                                            ELSE CONCAT(t.updated_by, '; ', 'move_shop_to_fin')
+                   t.updated_by         = CASE
+                                              WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_shop_to_fin'
+                                              ELSE CONCAT(`updated_by`, '; ', 'move_shop_to_fin')
                                          END
              WHERE t.id = v_tx_id;
         END LOOP;

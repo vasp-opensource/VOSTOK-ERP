@@ -1,10 +1,8 @@
--- ch_toPurch_inPurchorPayed: change «внешний → склад» при «В закупке»/«Оплачено» (без фильтра по Order_prod).
+-- ch_toPurch_inPurchorPayed: change «внешний → закупка» при «В закупке»/«Оплачено» (без фильтра по Order_prod).
 -- Для сценария «передача в закупку» с Order_prod = «В закупку» используйте ch_outside_to_purch.sql.
 -- Блокировка: lock_process_purchase_change_to_main
 
-DELIMITER $$
-
-DROP PROCEDURE IF EXISTS ch_toPurch_inPurchorPayed$$
+DROP PROCEDURE IF EXISTS ch_toPurch_inPurchorPayed;
 
 CREATE PROCEDURE ch_toPurch_inPurchorPayed()
 BEGIN
@@ -44,7 +42,7 @@ BEGIN
           AND t.Order_purch IN ('В закупке', 'Оплачено')
           AND t.type = 'change'
           AND t.where_from = 'внешний'
-          AND t.where_to = 'склад';
+          AND t.where_to = 'закупка';
 
         UPDATE `Main` AS m
         JOIN (
@@ -110,10 +108,7 @@ BEGIN
          )
         SET mv.Status_warehouse = 'Дефицит склада',
             mv.updated_at = NOW(),
-            mv.updated_by = CASE
-                               WHEN mv.updated_by IS NULL OR TRIM(COALESCE(mv.updated_by, '')) = '' THEN 'ch_toPurch_inPurchorPayed'
-                               ELSE CONCAT(mv.updated_by, '; ', 'ch_toPurch_inPurchorPayed')
-                            END
+            mv.updated_by = 'ch_toPurch_inPurchorPayed'
         WHERE mv.type = 'move'
           AND mv.Status_warehouse = 'Ожидание закупки';
 
@@ -122,10 +117,7 @@ BEGIN
         SET t.Status_transaction = 'В ожидании',
             t.Status_warehouse = 'В закупке',
             t.updated_at = NOW(),
-            t.updated_by = CASE
-                              WHEN t.updated_by IS NULL OR TRIM(COALESCE(t.updated_by, '')) = '' THEN 'ch_toPurch_inPurchorPayed'
-                              ELSE CONCAT(t.updated_by, '; ', 'ch_toPurch_inPurchorPayed')
-                           END
+            t.updated_by = 'ch_toPurch_inPurchorPayed'
         WHERE x.Quantity_change > 0;
 
         UPDATE `Transactions` t
@@ -133,10 +125,7 @@ BEGIN
         SET t.Status_transaction = 'Исполнено',
             t.Status_warehouse = 'Норма',
             t.updated_at = NOW(),
-            t.updated_by = CASE
-                              WHEN t.updated_by IS NULL OR TRIM(COALESCE(t.updated_by, '')) = '' THEN 'ch_toPurch_inPurchorPayed'
-                              ELSE CONCAT(t.updated_by, '; ', 'ch_toPurch_inPurchorPayed')
-                           END
+            t.updated_by = 'ch_toPurch_inPurchorPayed'
         WHERE x.Quantity_change < 0;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_purch_change_ids;
@@ -144,6 +133,4 @@ BEGIN
         COMMIT;
         DO RELEASE_LOCK('lock_process_purchase_change_to_main');
     END IF;
-END$$
-
-DELIMITER ;
+END;

@@ -1,7 +1,8 @@
 -- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Advanced_group + Status_warehouse,
 -- сумма Quantity_change; только Status_warehouse «В закупке» или «В изготовлении», Status_transaction «В ожидании».
--- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма», linked_transaction → суммарная строка.
--- Новая строка: linked_transaction = собственный id; шаблон полей — строка с MIN(id) в группе.
+-- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма»; id суммарной строки дописывается в linked_transaction через "; ".
+-- Новая строка: id суммарной дописывается в linked_transaction; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
+-- Таблица Main не изменяется. Новые поля Transactions (Recommend_purchprod, Order_sv, Document_date, …) переносятся в суммарную строку.
 -- Блокировка: lock_ch_merge_same_advGroup
 
 DELIMITER $$
@@ -34,18 +35,18 @@ BEGIN
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_merge_ids;
         CREATE TEMPORARY TABLE tmp_ch_merge_ids (
             `id` INT UNSIGNED PRIMARY KEY,
-            `ERP_ID` VARCHAR(255) NOT NULL,
-            `Advanced_group` TEXT NULL,
-            `Status_warehouse` VARCHAR(64) NOT NULL,
+            `ERP_ID` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `Advanced_group` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
+            `Status_warehouse` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
             `Quantity_change` BIGINT NOT NULL
         );
 
         INSERT INTO tmp_ch_merge_ids (`id`, `ERP_ID`, `Advanced_group`, `Status_warehouse`, `Quantity_change`)
         SELECT
             t.`id`,
-            t.`ERP_ID`,
-            t.`Advanced_group`,
-            t.`Status_warehouse`,
+            CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
+            CAST(t.`Advanced_group` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
+            CAST(t.`Status_warehouse` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
             COALESCE(t.`Quantity_change`, 0)
         FROM `Transactions` t
         WHERE t.`type` = 'change'
@@ -58,10 +59,10 @@ BEGIN
           AND EXISTS (
               SELECT 1
               FROM `Transactions` t2
-              WHERE t2.`ERP_ID` = t.`ERP_ID`
-                AND COALESCE(NULLIF(TRIM(t2.`Advanced_group`), ''), '')
-                    = COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '')
-                AND t2.`Status_warehouse` = t.`Status_warehouse`
+              WHERE t2.`ERP_ID` COLLATE utf8mb4_unicode_ci = t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                AND COALESCE(NULLIF(TRIM(t2.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
+                    = COALESCE(NULLIF(TRIM(t.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
+                AND t2.`Status_warehouse` COLLATE utf8mb4_unicode_ci = t.`Status_warehouse` COLLATE utf8mb4_unicode_ci
                 AND t2.`id` <> t.`id`
                 AND t2.`type` = 'change'
                 AND t2.`where_from` = 'внешний'
@@ -75,22 +76,24 @@ BEGIN
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_merge_agg;
         CREATE TEMPORARY TABLE tmp_ch_merge_agg AS
         SELECT
-            x.`ERP_ID` AS `ERP_ID`,
-            COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '') AS `ag_key`,
-            x.`Status_warehouse` AS `Status_warehouse`,
+            x.`ERP_ID` COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
+            COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `ag_key`,
+            x.`Status_warehouse` COLLATE utf8mb4_unicode_ci AS `Status_warehouse`,
             COUNT(*) AS `cnt`,
             SUM(COALESCE(t.`Quantity_change`, 0)) AS `sum_qty`
         FROM tmp_ch_merge_ids x
         INNER JOIN `Transactions` t ON t.`id` = x.`id`
-        GROUP BY x.`ERP_ID`, COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), ''), x.`Status_warehouse`
+        GROUP BY x.`ERP_ID` COLLATE utf8mb4_unicode_ci,
+                 COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci),
+                 x.`Status_warehouse` COLLATE utf8mb4_unicode_ci
         HAVING `cnt` >= 2;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_merge_replace_queue;
         CREATE TEMPORARY TABLE tmp_ch_merge_replace_queue (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            `ERP_ID` VARCHAR(255) NOT NULL,
-            `ag_key` TEXT NOT NULL,
-            `Status_warehouse` VARCHAR(64) NOT NULL
+            `ERP_ID` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `ag_key` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `Status_warehouse` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL
         );
 
         INSERT INTO tmp_ch_merge_replace_queue (`ERP_ID`, `ag_key`, `Status_warehouse`)
@@ -117,9 +120,12 @@ BEGIN
                 Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Recommend_purchprod,
+                Order_purch, Order_wh, Order_prod, Order_OTK,
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                Status_warehouse,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
                 Supplier, Location, Source, Initial_doc_no,
-                Order_purch, Order_wh, Order_prod, Order_OTK, Status_warehouse,
                 created_by, updated_by, created_at, updated_at
             )
             SELECT
@@ -137,13 +143,22 @@ BEGIN
                 fld.`Producer`, fld.`Catalogue_number`, fld.`Producer_article`, fld.`Distributer`, fld.`Distributer_article`,
                 fld.`MBOM_type`, fld.`Mass_kg`, fld.`Unit_of_measure`, fld.`Height`, fld.`Width`, fld.`Length`,
                 fld.`Advanced_group`, fld.`Address`,
-                fld.`Document_no`, fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
-                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
+                fld.`Recommend_purchprod`,
                 fld.`Order_purch`,
                 NULL,
                 fld.`Order_prod`,
                 fld.`Order_OTK`,
+                fld.`Order_sv`,
+                fld.`Recommend_wh`,
+                fld.`sum_qty_ord`,
+                fld.`Replace_to`,
+                fld.`Rework_to`,
+                fld.`Rework_from`,
                 CASE WHEN g.`sum_qty` <= 0 THEN 'Норма' ELSE g.`Status_warehouse` END,
+                fld.`Document_no`,
+                fld.`Document_date`,
+                fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
+                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
                 'ch_merge_same_advGroup',
                 'ch_merge_same_advGroup',
                 NOW(),
@@ -151,62 +166,88 @@ BEGIN
             FROM tmp_ch_merge_agg g
             INNER JOIN (
                 SELECT
-                    t.`ERP_ID`,
-                    COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '') AS `ag_key`,
-                    t.`Status_warehouse` AS `Status_warehouse`,
-                    MIN(t.`Project`) AS `Project`,
-                    MIN(t.`Target_assembly`) AS `Target_assembly`,
-                    MIN(t.`Supplied_component_number`) AS `Supplied_component_number`,
-                    MIN(t.`Component_revision`) AS `Component_revision`,
-                    MIN(t.`Component_name`) AS `Component_name`,
-                    MIN(t.`Quantity_in_target_assembly`) AS `Quantity_in_target_assembly`,
-                    MIN(t.`Quantity_of_target_assemblies`) AS `Quantity_of_target_assemblies`,
-                    MIN(t.`Components_quantity_in_assembly`) AS `Components_quantity_in_assembly`,
-                    MIN(t.`Component_type`) AS `Component_type`,
-                    MIN(t.`For_supplied_as_assembly_components_provided_by_supplier`) AS `For_supplied_as_assembly_components_provided_by_supplier`,
-                    MIN(t.`Part_material`) AS `Part_material`,
-                    MIN(t.`Producer`) AS `Producer`,
-                    MIN(t.`Catalogue_number`) AS `Catalogue_number`,
-                    MIN(t.`Producer_article`) AS `Producer_article`,
-                    MIN(t.`Distributer`) AS `Distributer`,
-                    MIN(t.`Distributer_article`) AS `Distributer_article`,
-                    MIN(t.`MBOM_type`) AS `MBOM_type`,
-                    MIN(t.`Mass_kg`) AS `Mass_kg`,
-                    MIN(t.`Unit_of_measure`) AS `Unit_of_measure`,
-                    MIN(t.`Height`) AS `Height`,
-                    MIN(t.`Width`) AS `Width`,
-                    MIN(t.`Length`) AS `Length`,
-                    MIN(t.`Advanced_group`) AS `Advanced_group`,
-                    MIN(t.`Address`) AS `Address`,
-                    MIN(t.`Document_no`) AS `Document_no`,
-                    MIN(t.`Zakaz_no`) AS `Zakaz_no`,
-                    MIN(t.`Date_needed`) AS `Date_needed`,
-                    MIN(t.`Date_expected`) AS `Date_expected`,
-                    MIN(t.`Cost_total_rub`) AS `Cost_total_rub`,
-                    MIN(t.`Supplier`) AS `Supplier`,
-                    MIN(t.`Location`) AS `Location`,
-                    MIN(t.`Source`) AS `Source`,
-                    MIN(t.`Initial_doc_no`) AS `Initial_doc_no`,
-                    MIN(t.`Order_purch`) AS `Order_purch`,
-                    MIN(t.`Order_prod`) AS `Order_prod`,
-                    MIN(t.`Order_OTK`) AS `Order_OTK`
-                FROM `Transactions` t
-                INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
-                GROUP BY t.`ERP_ID`, COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), ''), t.`Status_warehouse`
+                    q.`ERP_ID`,
+                    q.`ag_key`,
+                    q.`Status_warehouse`,
+                    MIN(q.`Project`) AS `Project`,
+                    MIN(q.`Target_assembly`) AS `Target_assembly`,
+                    MIN(q.`Supplied_component_number`) AS `Supplied_component_number`,
+                    MIN(q.`Component_revision`) AS `Component_revision`,
+                    MIN(q.`Component_name`) AS `Component_name`,
+                    MIN(q.`Quantity_in_target_assembly`) AS `Quantity_in_target_assembly`,
+                    MIN(q.`Quantity_of_target_assemblies`) AS `Quantity_of_target_assemblies`,
+                    MIN(q.`Components_quantity_in_assembly`) AS `Components_quantity_in_assembly`,
+                    MIN(q.`Component_type`) AS `Component_type`,
+                    MIN(q.`For_supplied_as_assembly_components_provided_by_supplier`) AS `For_supplied_as_assembly_components_provided_by_supplier`,
+                    MIN(q.`Part_material`) AS `Part_material`,
+                    MIN(q.`Producer`) AS `Producer`,
+                    MIN(q.`Catalogue_number`) AS `Catalogue_number`,
+                    MIN(q.`Producer_article`) AS `Producer_article`,
+                    MIN(q.`Distributer`) AS `Distributer`,
+                    MIN(q.`Distributer_article`) AS `Distributer_article`,
+                    MIN(q.`MBOM_type`) AS `MBOM_type`,
+                    MIN(q.`Mass_kg`) AS `Mass_kg`,
+                    MIN(q.`Unit_of_measure`) AS `Unit_of_measure`,
+                    MIN(q.`Height`) AS `Height`,
+                    MIN(q.`Width`) AS `Width`,
+                    MIN(q.`Length`) AS `Length`,
+                    MIN(q.`Advanced_group`) AS `Advanced_group`,
+                    MIN(q.`Address`) AS `Address`,
+                    MIN(q.`Recommend_purchprod`) AS `Recommend_purchprod`,
+                    MIN(q.`Document_no`) AS `Document_no`,
+                    MIN(q.`Document_date`) AS `Document_date`,
+                    MIN(q.`Zakaz_no`) AS `Zakaz_no`,
+                    MIN(q.`Date_needed`) AS `Date_needed`,
+                    MIN(q.`Date_expected`) AS `Date_expected`,
+                    MIN(q.`Cost_total_rub`) AS `Cost_total_rub`,
+                    MIN(q.`Supplier`) AS `Supplier`,
+                    MIN(q.`Location`) AS `Location`,
+                    MIN(q.`Source`) AS `Source`,
+                    MIN(q.`Initial_doc_no`) AS `Initial_doc_no`,
+                    MIN(q.`Order_purch`) AS `Order_purch`,
+                    MIN(q.`Order_prod`) AS `Order_prod`,
+                    MIN(q.`Order_OTK`) AS `Order_OTK`,
+                    MIN(q.`Order_sv`) AS `Order_sv`,
+                    MIN(q.`Recommend_wh`) AS `Recommend_wh`,
+                    SUM(COALESCE(q.`Quantity_ordered`, 0)) AS `sum_qty_ord`,
+                    MIN(q.`Replace_to`) AS `Replace_to`,
+                    MIN(q.`Rework_to`) AS `Rework_to`,
+                    MIN(q.`Rework_from`) AS `Rework_from`
+                FROM (
+                    SELECT
+                        CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
+                        COALESCE(NULLIF(TRIM(t.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `ag_key`,
+                        CAST(t.`Status_warehouse` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `Status_warehouse`,
+                        t.`Project`, t.`Target_assembly`, t.`Supplied_component_number`, t.`Component_revision`, t.`Component_name`,
+                        t.`Quantity_in_target_assembly`, t.`Quantity_of_target_assemblies`, t.`Components_quantity_in_assembly`,
+                        t.`Component_type`, t.`For_supplied_as_assembly_components_provided_by_supplier`, t.`Part_material`,
+                        t.`Producer`, t.`Catalogue_number`, t.`Producer_article`, t.`Distributer`, t.`Distributer_article`,
+                        t.`MBOM_type`, t.`Mass_kg`, t.`Unit_of_measure`, t.`Height`, t.`Width`, t.`Length`,
+                        t.`Advanced_group`, t.`Address`, t.`Recommend_purchprod`, t.`Document_no`, t.`Document_date`,
+                        t.`Zakaz_no`, t.`Date_needed`, t.`Date_expected`, t.`Cost_total_rub`, t.`Supplier`, t.`Location`,
+                        t.`Source`, t.`Initial_doc_no`, t.`Order_purch`, t.`Order_prod`, t.`Order_OTK`, t.`Order_sv`,
+                        t.`Recommend_wh`, t.`Quantity_ordered`, t.`Replace_to`, t.`Rework_to`, t.`Rework_from`
+                    FROM `Transactions` t
+                    INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
+                ) q
+                GROUP BY q.`ERP_ID`, q.`ag_key`, q.`Status_warehouse`
             ) fld
-              ON fld.`ERP_ID` = g.`ERP_ID`
-             AND fld.`ag_key` = g.`ag_key`
-             AND fld.`Status_warehouse` = g.`Status_warehouse`
+              ON fld.`ERP_ID` COLLATE utf8mb4_unicode_ci = g.`ERP_ID` COLLATE utf8mb4_unicode_ci
+             AND fld.`ag_key` COLLATE utf8mb4_unicode_ci = g.`ag_key` COLLATE utf8mb4_unicode_ci
+             AND fld.`Status_warehouse` COLLATE utf8mb4_unicode_ci = g.`Status_warehouse` COLLATE utf8mb4_unicode_ci
             WHERE g.`cnt` >= 2
-              AND g.`ERP_ID` = v_erp_id
-              AND g.`ag_key` = v_ag_key
-              AND g.`Status_warehouse` = v_wh;
+              AND g.`ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND g.`ag_key` COLLATE utf8mb4_unicode_ci = v_ag_key COLLATE utf8mb4_unicode_ci
+              AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
 
             SET v_new_id = LAST_INSERT_ID();
 
             UPDATE `Transactions` t
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`updated_at`         = NOW(),
                 t.`updated_by`         = CASE
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'ch_merge_same_advGroup'
@@ -217,11 +258,14 @@ BEGIN
             UPDATE `Transactions` t
             INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
             INNER JOIN tmp_ch_merge_agg g
-              ON g.`ERP_ID` = x.`ERP_ID`
-             AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
-             AND g.`Status_warehouse` = x.`Status_warehouse`
+              ON g.`ERP_ID` COLLATE utf8mb4_unicode_ci = x.`ERP_ID` COLLATE utf8mb4_unicode_ci
+             AND g.`ag_key` COLLATE utf8mb4_unicode_ci = COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
+             AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = x.`Status_warehouse` COLLATE utf8mb4_unicode_ci
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`Status_transaction` = 'Заменено',
                 t.`Status_warehouse`   = 'Норма',
                 t.`updated_at`         = NOW(),
@@ -230,14 +274,14 @@ BEGIN
                                             ELSE CONCAT(t.`updated_by`, '; ', 'ch_merge_same_advGroup')
                                          END
             WHERE g.`cnt` >= 2
-              AND g.`ERP_ID` = v_erp_id
-              AND g.`ag_key` = v_ag_key
-              AND g.`Status_warehouse` = v_wh;
+              AND g.`ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND g.`ag_key` COLLATE utf8mb4_unicode_ci = v_ag_key COLLATE utf8mb4_unicode_ci
+              AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
 
             DELETE FROM tmp_ch_merge_replace_queue
-            WHERE `ERP_ID` = v_erp_id
-              AND `ag_key` <=> v_ag_key
-              AND `Status_warehouse` = v_wh;
+            WHERE `ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND `ag_key` COLLATE utf8mb4_unicode_ci <=> v_ag_key COLLATE utf8mb4_unicode_ci
+              AND `Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
         END LOOP replace_loop;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_merge_replace_queue;

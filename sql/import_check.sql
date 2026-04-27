@@ -1,5 +1,11 @@
 -- import_check: расчет показателей для строк Import со Status_import='Новая'
 -- и установка Suggestion по бизнес-правилам.
+--
+-- Снимок в SET — те же поля, что в Main по ERP_ID; новые реквизиты Transactions
+-- (документы, Order_*, Rework_*, Source/Supplier/Location, …) в агрегатах
+-- и CASE/SUM не участвуют (используются Quantity_change, Quantity_of_parts_total
+-- и перечисленные type / where_from / where_to / Status_*).
+-- Тело процедуры совпадает с рабочим вариантом (ниже по BEGIN…END).
 
 DROP PROCEDURE IF EXISTS import_check;
 

@@ -1,5 +1,7 @@
 -- Набор процедур bot_* для имитации действий пользователей.
--- Все random-счетчики: целые числа [5..15].
+-- Счётчики сценариев в bot_call: FLOOR(5 + RAND() * 11) → целое [5..15].
+-- purch_cost в bot_call: FLOOR(5000 + RAND() * 145001) → целое [5000..150000].
+-- При UPDATE `Transactions`/`Import`: linked_transaction дополняется (не затирается), как в deficit / move_*.
 
 DELIMITER $$
 
@@ -31,6 +33,10 @@ BEGIN
         ) r ON r.`id` = i.`id`
         SET
             i.`Order_import` = 'Выполнить',
+            i.`linked_transaction` = CASE
+                WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.id AS CHAR)
+                ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.id)
+            END,
             i.`updated_at`   = CURRENT_TIMESTAMP;
     END IF;
 
@@ -101,6 +107,10 @@ BEGIN
         INNER JOIN tmp_bot_purch_picked p ON p.id = t.id
         SET
             t.`Order_purch` = 'В закупке',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_purchaser'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'bot_purchaser')
@@ -125,6 +135,10 @@ BEGIN
         ) r ON r.id = t.id
         SET
             t.`Order_purch` = 'Собственное производство',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_purchaser'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'bot_purchaser')
@@ -147,6 +161,10 @@ BEGIN
         SET
             t.`Order_purch` = 'Оплачено',
             t.`Cost_total_rub` = purch_cost,
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_purchaser'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'bot_purchaser')
@@ -194,6 +212,10 @@ BEGIN
             LIMIT prod_purch
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'В закупку',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -212,6 +234,10 @@ BEGIN
             LIMIT prod_prod
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Принято в изготовление',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -229,11 +255,15 @@ BEGIN
             LIMIT prod_manuf
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Изготовлено',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
 
-    /* move: Комплектация -> Изготовлено */
+    /* move: Комплектация -> Принято со склада (см. move_kit_to_shopfloor) */
     IF COALESCE(prod_kit, 0) > 0 THEN
         UPDATE `Transactions` t
         INNER JOIN (
@@ -245,7 +275,11 @@ BEGIN
             ORDER BY RAND()
             LIMIT prod_kit
         ) r ON r.id = t.id
-        SET t.`Order_prod` = 'Изготовлено',
+        SET t.`Order_prod` = 'Принято со склада',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -263,6 +297,10 @@ BEGIN
             LIMIT prod_assembled
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Изготовлено',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -280,6 +318,10 @@ BEGIN
             LIMIT prod_shipped
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Отгружено',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -297,6 +339,10 @@ BEGIN
             LIMIT prod_loss
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Забраковать',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -324,6 +370,10 @@ BEGIN
             LIMIT wh_purch
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'В закупку',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_warehouse' ELSE CONCAT(t.`updated_by`, '; ', 'bot_warehouse') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -342,6 +392,10 @@ BEGIN
             LIMIT wh_manuf
         ) r ON r.id = t.id
         SET t.`Order_wh` = 'Принято на склад',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_warehouse' ELSE CONCAT(t.`updated_by`, '; ', 'bot_warehouse') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -358,6 +412,10 @@ BEGIN
             LIMIT wh_return
         ) r ON r.id = t.id
         SET t.`Order_wh` = 'Принято на склад',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_warehouse' ELSE CONCAT(t.`updated_by`, '; ', 'bot_warehouse') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -373,6 +431,10 @@ BEGIN
             LIMIT wh_kit
         ) r ON r.id = t.id
         SET t.`Order_wh` = 'Списано со склада',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_warehouse' ELSE CONCAT(t.`updated_by`, '; ', 'bot_warehouse') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -398,6 +460,10 @@ BEGIN
             LIMIT OTK_manuf
         ) r ON r.id = t.id
         SET t.`Order_OTK` = 'Принято',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_OTK' ELSE CONCAT(t.`updated_by`, '; ', 'bot_OTK') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -414,6 +480,10 @@ BEGIN
             LIMIT OTK_assembly
         ) r ON r.id = t.id
         SET t.`Order_OTK` = 'Принято',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_OTK' ELSE CONCAT(t.`updated_by`, '; ', 'bot_OTK') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -430,6 +500,10 @@ BEGIN
             LIMIT OTK_shipped
         ) r ON r.id = t.id
         SET t.`Order_OTK` = 'Принято',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_OTK' ELSE CONCAT(t.`updated_by`, '; ', 'bot_OTK') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -446,6 +520,10 @@ BEGIN
             LIMIT OTK_loss
         ) r ON r.id = t.id
         SET t.`Order_OTK` = 'Забраковано',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_OTK' ELSE CONCAT(t.`updated_by`, '; ', 'bot_OTK') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
@@ -454,13 +532,15 @@ END$$
 CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_call()
 SQL SECURITY DEFINER
 BEGIN
-    DECLARE exp_row_count INT;
-    DECLARE exp_approve INT;
+    /* Один проход: Export → Purchaser → Shopfloor → Warehouse → OTK. */
+
+    DECLARE exp_row_count INT;   /* limit строк Record_source → Import */
+    DECLARE exp_approve INT;     /* limit строк Import: Новая → Выполнить */
 
     DECLARE purch_purch INT;
     DECLARE purch_manuf INT;
-    DECLARE purch_byed INT;
-    DECLARE purch_cost BIGINT;
+    DECLARE purch_byed INT;      /* куплено; имя параметра bot_purchaser, как в API */
+    DECLARE purch_cost BIGINT;   /* подставляется в Cost_total_rub при «Оплачено» */
 
     DECLARE prod_purch INT;
     DECLARE prod_prod INT;
@@ -480,6 +560,7 @@ BEGIN
     DECLARE OTK_shipped INT;
     DECLARE OTK_loss INT;
 
+    /* Случайные лимиты сценариев: [5..15]; cost — [5000..150000]. */
     SET exp_row_count  = FLOOR(5 + RAND() * 11);
     SET exp_approve    = FLOOR(5 + RAND() * 11);
 
@@ -507,7 +588,7 @@ BEGIN
     SET OTK_loss       = FLOOR(5 + RAND() * 11);
 
     CALL bot_export_user(exp_row_count, exp_approve);
-    CALL bot_purhaser(purch_purch, purch_manuf, purch_byed, purch_cost);
+    CALL bot_purchaser(purch_purch, purch_manuf, purch_byed, purch_cost);
     CALL bot_shopfloor(prod_purch, prod_prod, prod_manuf, prod_kit, prod_assembled, prod_shipped, prod_loss);
     CALL bot_warehouse(wh_purch, wh_manuf, wh_return, wh_kit);
     CALL bot_OTK(OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss);

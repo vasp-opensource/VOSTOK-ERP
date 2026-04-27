@@ -1,7 +1,7 @@
 -- Смок-тест move_wh_to_shopfloor: объединение двух change по ERP_ID + Advanced_group.
 -- Ожидание после CALL:
---   • старые change: Status_transaction = «Заменено», linked_transaction = id суммарной новой строки;
---   • новая строка change: Quantity_change = сумма, linked_transaction = собственный id.
+--   • старые change: Status_transaction = «Заменено», в linked_transaction дописан id суммарной новой строки;
+--   • новая строка change: Quantity_change = сумма, в linked_transaction дописан собственный id;
 --
 -- Запускать на копии БД или после бэкапа. Перед CALL не должно быть «висячих» move
 -- (type=move, where_from=склад, where_to IN (брак,отгрузка,изделие), Status_warehouse=Новая, Order_wh IS NULL),
@@ -120,25 +120,25 @@ SET @sum_id = (
     LIMIT 1
 );
 
--- Родители: Заменено, linked = id суммарной
+-- Родители: Заменено, linked содержит id суммарной (цепочка через «; »)
 SELECT
     'После: родительские строки' AS step,
     t.id,
     t.Quantity_change,
     t.Status_transaction,
     t.linked_transaction,
-    (t.linked_transaction = @sum_id) AS linked_ok_points_to_sum
+    (FIND_IN_SET(CAST(@sum_id AS CHAR), REPLACE(IFNULL(t.linked_transaction, ''), '; ', ',')) > 0) AS linked_ok_points_to_sum
 FROM `Transactions` t
 WHERE t.id IN (@ch_id_a, @ch_id_b);
 
--- Суммарная: linked = себе, количество 35
+-- Суммарная: linked содержит себя, количество 35
 SELECT
     'После: суммарная строка' AS step,
     t.id,
     t.ERP_ID,
     t.Quantity_change,
     t.linked_transaction,
-    (t.linked_transaction = t.id) AS linked_ok_self,
+    (FIND_IN_SET(CAST(t.id AS CHAR), REPLACE(IFNULL(t.linked_transaction, ''), '; ', ',')) > 0) AS linked_ok_self,
     (t.Quantity_change = 35) AS qty_ok
 FROM `Transactions` t
 WHERE t.id = @sum_id;
