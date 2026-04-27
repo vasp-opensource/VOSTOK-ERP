@@ -1,0 +1,14 @@
+---
+description: Always return full procedure text without DELIMITER
+alwaysApply: true
+---
+
+# Procedure Output Format
+
+When a SQL stored procedure is edited or fixed:
+
+- Return the full, updated procedure text in the response.
+- Do not include `DELIMITER` lines.
+- Use plain SQL starting from `DROP PROCEDURE IF EXISTS ...;` and `CREATE PROCEDURE ...`.
+- Keep the procedure body exactly as in the repository after edits.
+
