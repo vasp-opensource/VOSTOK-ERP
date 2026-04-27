@@ -1,6 +1,7 @@
 -- ch_outside_to_ownProd: внешний → склад (собственное производство). Только отбор в tmp_ch_outside_unite_ids; объединение и Main — ch_outside_unite.
 -- Критерии: Order_purch «Собственное производство», Order_prod «Принято в изготовление»; партнёр — «В изготовлении», «В ожидании» (не merge-строки процедуры).
 -- Перед использованием выполните ch_outside_unite.sql (процедура ch_outside_unite).
+-- Суммарные INSERT в Transactions и нулевой по умолчанию Main.Quantity_of_rework задаются в ch_outside_unite (см. колонки как в ch_merge_same_advGroup).
 
 DELIMITER $$
 

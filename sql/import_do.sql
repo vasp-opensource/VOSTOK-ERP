@@ -1,5 +1,10 @@
 DROP PROCEDURE IF EXISTS import_do;
 
+-- import_do: сценарии Order_import / Suggestion, клоны строк в Import, финальная вставка в Transactions.
+-- Вставка в Transactions: полный набор реквизитов, как в ch_merge / deficit_*; в Import нет
+--   Recommend_purchprod, Order_*, Order_sv, Rework_*, Document_date — в SELECT даются NULL/0.
+--   Supplier, Location, Source, Initial_doc_no — из Import (см. create_table_Import / миграции БД).
+
 DELIMITER $$
 
 CREATE PROCEDURE import_do()
@@ -255,7 +260,13 @@ BEGIN
             Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
             For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
             Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-            Height, Width, Length, Advanced_group, Address, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+            Height, Width, Length, Advanced_group, Address,
+            Recommend_purchprod,
+            Order_purch, Order_wh, Order_prod, Order_OTK,
+            Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+            Status_warehouse,
+            Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+            Supplier, Location, Source, Initial_doc_no
         )
         SELECT
             i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', i.linked_transaction,
@@ -264,7 +275,11 @@ BEGIN
             COALESCE(i.Quantity_in_target_assembly, 0), COALESCE(i.Quantity_of_target_assemblies, 0), COALESCE(i.Components_quantity_in_assembly, 0), i.Component_type,
             i.For_supplied_as_assembly_components_provided_by_supplier, i.Part_material, i.Producer, i.Catalogue_number,
             i.Producer_article, i.Distributer, i.Distributer_article, i.MBOM_type, i.Mass_kg, i.Unit_of_measure,
-            i.Height, i.Width, i.Length, i.Advanced_group, i.Address, i.Document_no, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub
+            i.Height, i.Width, i.Length, i.Advanced_group, i.Address,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
+            NULL,
+            i.Document_no, NULL, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub,
+            i.Supplier, i.Location, i.Source, i.Initial_doc_no
         FROM `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id;
 

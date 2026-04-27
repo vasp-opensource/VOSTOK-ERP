@@ -1,7 +1,8 @@
 -- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Advanced_group + Status_warehouse,
 -- сумма Quantity_change; только Status_warehouse «В закупке» или «В изготовлении», Status_transaction «В ожидании».
 -- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма», linked_transaction → суммарная строка.
--- Новая строка: linked_transaction = собственный id; шаблон полей — строка с MIN(id) в группе.
+-- Новая строка: linked_transaction = собственный id; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
+-- Таблица Main не изменяется. Новые поля Transactions (Recommend_purchprod, Order_sv, Document_date, …) переносятся в суммарную строку.
 -- Блокировка: lock_ch_merge_same_advGroup
 
 DELIMITER $$
@@ -117,9 +118,12 @@ BEGIN
                 Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Recommend_purchprod,
+                Order_purch, Order_wh, Order_prod, Order_OTK,
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                Status_warehouse,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
                 Supplier, Location, Source, Initial_doc_no,
-                Order_purch, Order_wh, Order_prod, Order_OTK, Status_warehouse,
                 created_by, updated_by, created_at, updated_at
             )
             SELECT
@@ -137,13 +141,22 @@ BEGIN
                 fld.`Producer`, fld.`Catalogue_number`, fld.`Producer_article`, fld.`Distributer`, fld.`Distributer_article`,
                 fld.`MBOM_type`, fld.`Mass_kg`, fld.`Unit_of_measure`, fld.`Height`, fld.`Width`, fld.`Length`,
                 fld.`Advanced_group`, fld.`Address`,
-                fld.`Document_no`, fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
-                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
+                fld.`Recommend_purchprod`,
                 fld.`Order_purch`,
                 NULL,
                 fld.`Order_prod`,
                 fld.`Order_OTK`,
+                fld.`Order_sv`,
+                fld.`Recommend_wh`,
+                fld.`sum_qty_ord`,
+                fld.`Replace_to`,
+                fld.`Rework_to`,
+                fld.`Rework_from`,
                 CASE WHEN g.`sum_qty` <= 0 THEN 'Норма' ELSE g.`Status_warehouse` END,
+                fld.`Document_no`,
+                fld.`Document_date`,
+                fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
+                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
                 'ch_merge_same_advGroup',
                 'ch_merge_same_advGroup',
                 NOW(),
@@ -178,7 +191,9 @@ BEGIN
                     MIN(t.`Length`) AS `Length`,
                     MIN(t.`Advanced_group`) AS `Advanced_group`,
                     MIN(t.`Address`) AS `Address`,
+                    MIN(t.`Recommend_purchprod`) AS `Recommend_purchprod`,
                     MIN(t.`Document_no`) AS `Document_no`,
+                    MIN(t.`Document_date`) AS `Document_date`,
                     MIN(t.`Zakaz_no`) AS `Zakaz_no`,
                     MIN(t.`Date_needed`) AS `Date_needed`,
                     MIN(t.`Date_expected`) AS `Date_expected`,
@@ -189,7 +204,13 @@ BEGIN
                     MIN(t.`Initial_doc_no`) AS `Initial_doc_no`,
                     MIN(t.`Order_purch`) AS `Order_purch`,
                     MIN(t.`Order_prod`) AS `Order_prod`,
-                    MIN(t.`Order_OTK`) AS `Order_OTK`
+                    MIN(t.`Order_OTK`) AS `Order_OTK`,
+                    MIN(t.`Order_sv`) AS `Order_sv`,
+                    MIN(t.`Recommend_wh`) AS `Recommend_wh`,
+                    SUM(COALESCE(t.`Quantity_ordered`, 0)) AS `sum_qty_ord`,
+                    MIN(t.`Replace_to`) AS `Replace_to`,
+                    MIN(t.`Rework_to`) AS `Rework_to`,
+                    MIN(t.`Rework_from`) AS `Rework_from`
                 FROM `Transactions` t
                 INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
                 GROUP BY t.`ERP_ID`, COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), ''), t.`Status_warehouse`

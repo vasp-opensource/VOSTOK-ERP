@@ -5,7 +5,8 @@
 -- Вход: Status_warehouse = Комплектация, Order_wh = Списано со склада, Order_prod = Принято со склада.
 -- Транзакция не завершается (остаётся «В ожидании»), Status_warehouse после обработки:
 --   брак → Утилизация, отгрузка → Упаковка, изделие → Сборка.
--- Цель «цех» не обрабатывается (для неё — другие процедуры).
+-- Вставки в Transactions — полный список реквизитов (Recommend_purchprod, Order_sv, Document_date, Rework_*, …)
+--   как в deficit_supply; копирование с исходной строки, кроме количеств / Status_warehouse.
 
 DELIMITER $$
 
@@ -86,6 +87,10 @@ BEGIN
                    SET Status_warehouse   = 'Дефицит склада',
                        Status_transaction = 'В ожидании',
                        linked_transaction = v_tx_id,
+                       updated_by            = CASE
+                                                      WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_kit_to_shopfloor'
+                                                      ELSE CONCAT(`updated_by`, '; ', 'move_kit_to_shopfloor')
+                                                   END,
                        updated_at       = CURRENT_TIMESTAMP
                  WHERE id = v_tx_id;
 
@@ -101,6 +106,10 @@ BEGIN
                    SET Status_warehouse   = 'Дефицит склада',
                        Status_transaction = 'В ожидании',
                        linked_transaction = v_tx_id,
+                       updated_by            = CASE
+                                                      WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_kit_to_shopfloor'
+                                                      ELSE CONCAT(`updated_by`, '; ', 'move_kit_to_shopfloor')
+                                                   END,
                        updated_at         = CURRENT_TIMESTAMP
                  WHERE id = v_tx_id;
 
@@ -124,6 +133,10 @@ BEGIN
                            ELSE 'Норма'
                        END,
                        linked_transaction = v_tx_id,
+                       updated_by            = CASE
+                                                      WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_kit_to_shopfloor'
+                                                      ELSE CONCAT(`updated_by`, '; ', 'move_kit_to_shopfloor')
+                                                   END,
                        updated_at         = CURRENT_TIMESTAMP
                  WHERE id = v_tx_id;
 
@@ -138,6 +151,10 @@ BEGIN
                SET Status_transaction = 'Заменено',
                    Status_warehouse   = 'Норма',
                    linked_transaction = v_tx_id,
+                   updated_by            = CASE
+                                                  WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_kit_to_shopfloor'
+                                                  ELSE CONCAT(`updated_by`, '; ', 'move_kit_to_shopfloor')
+                                               END,
                    updated_at         = CURRENT_TIMESTAMP
              WHERE id = v_tx_id;
 
@@ -151,10 +168,12 @@ BEGIN
                 Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-                Supplier, Location, Source, Initial_doc_no,
+                Recommend_purchprod,
                 Order_purch, Order_wh, Order_prod, Order_OTK,
-                Status_warehouse
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                Status_warehouse,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Supplier, Location, Source, Initial_doc_no
             )
             SELECT
                 ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'move_kit_to_shopfloor', COALESCE(updated_by, 'move_kit_to_shopfloor'),
@@ -166,15 +185,17 @@ BEGIN
                 Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-                Supplier, Location, Source, Initial_doc_no,
+                Recommend_purchprod,
                 Order_purch, Order_wh, Order_prod, Order_OTK,
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
                 CASE where_to
                     WHEN 'брак' THEN 'Утилизация'
                     WHEN 'отгрузка' THEN 'Упаковка'
                     WHEN 'изделие' THEN 'Сборка'
                     ELSE 'Норма'
-                END
+                END,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Supplier, Location, Source, Initial_doc_no
             FROM `Transactions`
             WHERE id = v_tx_id;
 
@@ -188,10 +209,12 @@ BEGIN
                 Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-                Supplier, Location, Source, Initial_doc_no,
+                Recommend_purchprod,
                 Order_purch, Order_wh, Order_prod, Order_OTK,
-                Status_warehouse
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                Status_warehouse,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Supplier, Location, Source, Initial_doc_no
             )
             SELECT
                 ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'move_kit_to_shopfloor', COALESCE(updated_by, 'move_kit_to_shopfloor'),
@@ -203,10 +226,12 @@ BEGIN
                 Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-                Supplier, Location, Source, Initial_doc_no,
+                Recommend_purchprod,
                 Order_purch, Order_wh, Order_prod, Order_OTK,
-                'Дефицит склада'
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                'Дефицит склада',
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Supplier, Location, Source, Initial_doc_no
             FROM `Transactions`
             WHERE id = v_tx_id;
 

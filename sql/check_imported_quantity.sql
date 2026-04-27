@@ -1,6 +1,8 @@
-DELIMITER $$
+-- check_imported_quantity: вызывается из check_data_integrity; пишет в tmp_integrity_candidates.
+-- Сверка: агрегаты по change (Status_transaction, created_by) vs SUM(Quantity_change) по Import при Status_import=«Импортировано».
+-- Используются только количество и перечисленные статусы/метки; поля Main и новые реквизиты Transactions (документы, Order_*, Rework_*, …) в расчёте не участвуют.
 
-DROP PROCEDURE IF EXISTS check_imported_quantity$$
+DELIMITER $$
 
 CREATE PROCEDURE check_imported_quantity()
 BEGIN

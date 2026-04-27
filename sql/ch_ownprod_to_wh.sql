@@ -1,6 +1,9 @@
 -- ch_ownprod_to_wh: приёмка собственного производства на склад (change → Main, обновление связанных move).
 -- Блокировка: lock_ch_ownProd_to_wh
 --
+-- Схема: новые поля Main (в т.ч. Quantity_of_rework с DEFAULT 0) в INSERT Main не перечисляются — срабатывают значения по умолчанию БД.
+-- Новые реквизиты Transactions (Document_date, Order_sv, Rework_*, и т.д.) не создаются и в UPDATE change/move не сбрасываются, только статусы/updated_*.
+--
 -- Требования к БД: колонки Main.Source, Transactions.Source (sql/alter_Main_Source.sql, alter_transactions_Source.sql).
 -- Значение «Разные» в Source не используется (как ch_purch_to_wh).
 --

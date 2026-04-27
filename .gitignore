@@ -65,3 +65,6 @@ pnpm-debug.log*
 tmp/
 temp/
 *.tmp
+
+# Local test output
+testresult/

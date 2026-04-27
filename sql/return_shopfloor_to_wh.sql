@@ -1,4 +1,6 @@
 -- return_shopfloor_to_wh: обработка возврата на склад по move-строкам.
+-- Новые реквизиты Transactions (документы, Recommend_*, Order_sv, Rework_*, …) не обновляются —
+--   меняются только Status_warehouse, Order_prod, аудит и перечисленные счётчики Main.
 -- Вход:
 --   type='move', where_from='склад', where_to in ('брак','отгрузка','изделие'),
 --   Status_transaction='В ожидании',

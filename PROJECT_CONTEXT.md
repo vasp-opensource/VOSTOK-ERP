@@ -30,6 +30,7 @@
 | Quantity_implemented | bigint | NO | | 0 | |
 | Quantity_shipped | bigint | NO | | 0 | |
 | Quantity_of_losses | bigint | NO | | 0 | |
+| Quantity_of_rework | bigint | NO | | 0 | |
 | Address | text | YES | | NULL | |
 | Component_type | text | YES | | NULL | |
 | Part_material | text | YES | | NULL | |
@@ -67,7 +68,7 @@
 | linked_transaction | int | YES | | NULL | |
 | type | enum('change','move') | YES | | change | |
 | where_from | enum('внешний','закупка','склад','цех','собственное производство') | NO | | внешний | |
-| where_to | enum('закупка','склад','цех','собственное производство','отгрузка','брак','изделие') | NO | | закупка | |
+| where_to | enum('закупка','склад','цех','собственное производство','отгрузка','брак','изделие','доработка') | NO | | закупка | |
 | Quantity_of_parts_total | bigint | NO | | 0 | |
 | Quantity_change | bigint | NO | | 0 | |
 | Status_transaction | enum('В ожидании','Исполнено','Отменено','Заменено') | YES | | NULL | |
@@ -95,12 +96,20 @@
 | Length | double | YES | | NULL | |
 | Advanced_group | text | YES | | NULL | |
 | Address | text | YES | | NULL | |
+| Recommend_purchprod | enum('Уточнить кол-во в изготовлении','Уточнить кол-во в закупке','Уточнить ревизию в изготовлении','Уточнить ревизию в закупке') | YES | | NULL | |
 | Order_purch | enum('Ожидание закупки','В закупке','Оплачено','Собственное производство','Проблема','Дефицит закупки') | YES | | Ожидание закупки | |
 | Order_wh | enum('Принято на склад','В комплектации','Списано со склада','Проблема') | YES | | NULL | |
 | Order_prod | enum('Принято в сборку','Забраковать','Проблема','Ожидание','Принято в изготовление','Изготовлено','Вернуть на склад') | YES | | NULL | |
 | Order_OTK | enum('Принято','Забраковано','В доработку') | YES | | NULL | |
-| Status_warehouse | enum('Норма','Дефицит склада','Ожидание закупки','Ожидание изготовления','Дефицит поставки','Комплектация','В закупке','В изготовлении','Новая','Утилизация','Сборка','Упаковка','Ожидание поставки') | YES | | NULL | |
+| Order_sv | enum('разбить','забраковать','отменить','доработать запас','заменить со склада','заменить и восполнить') | YES | | NULL | |
+| Recommend_wh | text | YES | | NULL | |
+| Quantity_ordered | bigint | NO | | 0 | |
+| Replace_to | text | YES | | NULL | |
+| Rework_to | text | YES | | NULL | |
+| Rework_from | text | YES | | NULL | |
+| Status_warehouse | enum('Норма','Дефицит склада','Ожидание закупки','Ожидание изготовления','Дефицит поставки','Комплектация','В закупке','В изготовлении','Новая','Утилизация','Сборка','Упаковка','Ожидание поставки','Ожидает решения') | YES | | NULL | |
 | Document_no | text | YES | | NULL | |
+| Document_date | date | YES | | NULL | Дата закрывающего документа |
 | Zakaz_no | text | YES | | NULL | |
 | Date_needed | date | YES | | NULL | |
 | Date_expected | date | YES | | NULL | |
