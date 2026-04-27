@@ -1,0 +1,30 @@
+# Нормализация окончаний строк и бинарники
+# https://git-scm.com/docs/gitattributes
+
+* text=auto
+
+# Текстовые артефакты репозитория — LF (удобно для Linux CI и единообразия)
+*.sql   text eol=lf
+*.md    text eol=lf
+*.mdc   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.sh    text eol=lf
+*.txt   text eol=lf
+
+# Скрипты Windows
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Бинарные шаблоны и документы
+*.xlsx  binary
+*.xls   binary
+*.xlsm  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
