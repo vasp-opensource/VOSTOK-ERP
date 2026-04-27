@@ -53,7 +53,7 @@ BEGIN
             COALESCE(t.Quantity_change, 0)
         FROM `Transactions` t
         WHERE t.type = 'change'
-          AND COALESCE(t.Quantity_change, 0) <> 0
+          AND COALESCE(t.Quantity_change, 0) > 0
           AND (
                t.Status_transaction IS NULL
             OR TRIM(COALESCE(t.Status_transaction, '')) = ''
