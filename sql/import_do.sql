@@ -5,6 +5,7 @@ DROP PROCEDURE IF EXISTS import_do;
 --   Recommend_purchprod, Order_*, Order_sv, Rework_*, Document_date — в SELECT даются NULL/0.
 --   Supplier, Location, Source, Initial_doc_no — из Import (см. create_table_Import / миграции БД).
 --   linked_transaction при вставке в Transactions — NULL (цепочка из Import не копируется).
+--   Status_warehouse при импорте в Transactions — «Новая» (не из Import).
 
 DELIMITER $$
 
@@ -268,7 +269,7 @@ BEGIN
           AND i.Suggestion = 'Импортировать'
           AND i.Order_import = 'Выполнить';
 
-        /* Копия в Transactions: linked_transaction не переносим (новая строка в журнале) — NULL. */
+        /* Копия в Transactions: linked_transaction не переносим; Status_warehouse = «Новая». */
         INSERT INTO `Transactions` (
             ERP_ID, created_at, updated_at, created_by, updated_by, linked_transaction,
             type, where_from, where_to, Quantity_of_parts_total, Quantity_change, Status_transaction,
@@ -294,7 +295,7 @@ BEGIN
             i.Producer_article, i.Distributer, i.Distributer_article, i.MBOM_type, i.Mass_kg, i.Unit_of_measure,
             i.Height, i.Width, i.Length, i.Advanced_group, i.Address,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
-            NULL,
+            'Новая',
             i.Document_no, NULL, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub,
             i.Supplier, i.Location, i.Source, i.Initial_doc_no
         FROM `Import` i
