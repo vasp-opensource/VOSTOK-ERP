@@ -57,7 +57,7 @@ BEGIN
           AND t.Order_purch = 'Оплачено'
           AND t.Cost_total_rub IS NOT NULL
           AND t.Cost_total_rub > 0
-          AND COALESCE(t.Quantity_change, 0) <> 0;
+          AND COALESCE(t.Quantity_change, 0) > 0;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_purch_erp_minid;
         CREATE TEMPORARY TABLE tmp_purch_erp_minid (

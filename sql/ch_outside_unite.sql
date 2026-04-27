@@ -45,11 +45,16 @@ BEGIN
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 
-        /* 2) Всем отобранным: склад и Source */
+        /* 2) Склад и Source: в «закупке/изготовлении» только неотрицательные qty.
+           Отрицательный change не должен попадать в контур приёмки (ch_*_to_wh) до неттинга:
+           остаётся «Новая», затем после зачёта — Отменено/Норма или сводная строка. */
         UPDATE `Transactions` t
         INNER JOIN tmp_ch_outside_unite_ids x ON x.id = t.id
         SET
-            t.`Status_warehouse` = p_wh_bulk,
+            t.`Status_warehouse` = CASE
+                                      WHEN COALESCE(t.`Quantity_change`, 0) < 0 THEN 'Новая'
+                                      ELSE p_wh_bulk
+                                   END,
             t.`Source`           = p_source,
             t.`updated_at`       = NOW(),
             t.`updated_by`       = CASE
@@ -336,7 +341,47 @@ BEGIN
                 m.`updated_by`              = p_proc_name;
         END IF;
 
-        /* 4) cnt >= 2: суммарная строка, linked, Заменено */
+        /*
+         * Отмена без «фантомной» merge-строки с Quantity_change = 0:
+         *  - cnt >= 2 и после неттинга adj_qty = 0 — одна сумма по группе 0, новую строку не создаём;
+         *    исходные строки переводим в Отменено, Quantity_change с сохранением (для целостности).
+         *  - cnt = 1 и adj_qty <= 0 — то же: только статусы, количество не перезаписываем.
+         */
+        UPDATE `Transactions` t
+        INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
+        INNER JOIN tmp_ch_outside_unite_group_agg g
+          ON g.`ERP_ID` = x.`ERP_ID`
+         AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
+        SET
+            t.`Status_transaction` = 'Отменено',
+            t.`Status_warehouse`   = 'Норма',
+            t.`Source`             = p_source,
+            t.`updated_at`         = NOW(),
+            t.`updated_by`         = CASE
+                                        WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
+                                        ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
+                                     END
+        WHERE g.`cnt` >= 2
+          AND COALESCE(g.`adj_qty`, 0) = 0;
+
+        UPDATE `Transactions` t
+        INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
+        INNER JOIN tmp_ch_outside_unite_group_agg g
+          ON g.`ERP_ID` = x.`ERP_ID`
+         AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
+        SET
+            t.`Status_transaction` = 'Отменено',
+            t.`Status_warehouse`   = 'Норма',
+            t.`Source`             = p_source,
+            t.`updated_at`         = NOW(),
+            t.`updated_by`         = CASE
+                                        WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
+                                        ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
+                                     END
+        WHERE g.`cnt` = 1
+          AND COALESCE(g.`adj_qty`, 0) <= 0;
+
+        /* 4) cnt >= 2 и нетто <> 0: одна суммарная строка, linked, Заменено (без вставки при adj_qty = 0) */
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_replace_queue;
         CREATE TEMPORARY TABLE tmp_ch_outside_unite_replace_queue (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -348,7 +393,7 @@ BEGIN
         SELECT `ERP_ID`, `ag_key`
         FROM tmp_ch_outside_unite_group_agg
         WHERE `cnt` >= 2
-           OR COALESCE(`adj_qty`, 0) <= 0;
+          AND COALESCE(`adj_qty`, 0) <> 0;
 
         replace_loop: LOOP
             SELECT COUNT(*) INTO v_queue_left FROM tmp_ch_outside_unite_replace_queue;
@@ -448,7 +493,8 @@ BEGIN
             ) fld
               ON fld.`ERP_ID` = g.`ERP_ID`
              AND fld.`ag_key` = g.`ag_key`
-            WHERE (g.`cnt` >= 2 OR COALESCE(g.`adj_qty`, 0) <= 0)
+            WHERE g.`cnt` >= 2
+              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -479,7 +525,8 @@ BEGIN
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
                                             ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
                                          END
-            WHERE (g.`cnt` >= 2 OR COALESCE(g.`adj_qty`, 0) <= 0)
+            WHERE g.`cnt` >= 2
+              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -513,6 +560,8 @@ BEGIN
                              END
         WHERE g.`cnt` = 1
           AND COALESCE(g.`adj_qty`, 0) > 0;
+
+        /* cnt = 1 и adj_qty > 0: количество приводим к нетто; отменённые одиночные строки уже обработаны выше без смены Quantity_change */
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_delta;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_total;
