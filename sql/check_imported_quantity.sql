@@ -42,7 +42,7 @@ BEGIN
         WHERE `type` = 'change'
           AND `Status_transaction` IN ('В ожидании', 'Исполнено')
         GROUP BY `ERP_ID`
-    ) twe ON twe.`ERP_ID` = b.`ERP_ID`
+    ) twe ON twe.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -55,7 +55,7 @@ BEGIN
             OR `created_by` <> 'deficit_supply'
           )
         GROUP BY `ERP_ID`
-    ) tr ON tr.`ERP_ID` = b.`ERP_ID`
+    ) tr ON tr.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -65,7 +65,7 @@ BEGIN
           AND `Status_transaction` IN ('В ожидании', 'Исполнено', 'Заменено')
           AND `created_by` = 'deficit_supply'
         GROUP BY `ERP_ID`
-    ) tds ON tds.`ERP_ID` = b.`ERP_ID`
+    ) tds ON tds.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -74,7 +74,7 @@ BEGIN
         WHERE `type` = 'change'
           AND `Status_transaction` = 'Отменено'
         GROUP BY `ERP_ID`
-    ) tc ON tc.`ERP_ID` = b.`ERP_ID`
+    ) tc ON tc.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -82,7 +82,7 @@ BEGIN
         FROM `Import`
         WHERE `Status_import` = 'Импортировано'
         GROUP BY `ERP_ID`
-    ) i ON i.`ERP_ID` = b.`ERP_ID`
+    ) i ON i.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     WHERE (
             COALESCE(twe.sum_wait_exec, 0)
             - COALESCE(tds.sum_deficit_supply, 0)
