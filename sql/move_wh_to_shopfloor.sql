@@ -8,8 +8,8 @@
 -- Source: копируется с родителя в дочерние move; в объединённом change — «Разные», если в группе разные Source, иначе общее значение.
 -- Объединение change только со складом «Новая» или «Дефицит закупки» (как вход в ch_outside_to_purch): иначе в сумму попадают
 -- лишние строки и строки от deficit за прошлые циклы → завышение Quantity_change (напр. 151 вместо 50).
--- Агрегированный change: после вставки linked_transaction = собственный id (как новая «голова» группы).
--- Заменённые родительские change: linked_transaction = id суммарной строки; Status_transaction = «Заменено».
+-- Агрегированный change: после вставки в linked_transaction дописывается id новой строки (агрегат «голова» группы).
+-- Заменённые родительские change: в linked_transaction дописывается id суммарной строки; Status_transaction = «Заменено».
 
 DELIMITER $$
 
@@ -120,7 +120,10 @@ BEGIN
         )
         SELECT
           ERP_ID,
-          v_parent_id,
+          CASE
+            WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(v_parent_id AS CHAR)
+            ELSE CONCAT(TRIM(`linked_transaction`), '; ', v_parent_id)
+          END,
           'move',
           'склад',
           v_where_to,
@@ -169,7 +172,10 @@ BEGIN
         )
         SELECT
           ERP_ID,
-          v_parent_id,
+          CASE
+            WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(v_parent_id AS CHAR)
+            ELSE CONCAT(TRIM(`linked_transaction`), '; ', v_parent_id)
+          END,
           'move',
           'склад',
           v_where_to,
@@ -197,7 +203,10 @@ BEGIN
 
         UPDATE Transactions
         SET Status_transaction = 'Заменено',
-            linked_transaction = id,
+            linked_transaction   = CASE
+                WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(id AS CHAR)
+                ELSE CONCAT(TRIM(`linked_transaction`), '; ', id)
+            END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = v_parent_id;
 
@@ -387,12 +396,18 @@ BEGIN
       SET v_m_new_id = LAST_INSERT_ID();
 
       UPDATE `Transactions`
-         SET linked_transaction = v_m_new_id
+         SET linked_transaction   = CASE
+             WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(v_m_new_id AS CHAR)
+             ELSE CONCAT(TRIM(`linked_transaction`), '; ', v_m_new_id)
+         END
        WHERE id = v_m_new_id;
 
       UPDATE `Transactions` t
       INNER JOIN tmp_ch_ids xi ON xi.id = t.id
-         SET t.linked_transaction = v_m_new_id,
+         SET t.linked_transaction   = CASE
+             WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_m_new_id AS CHAR)
+             ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_m_new_id)
+         END,
              t.Status_transaction = 'Заменено',
              t.updated_by         = CASE
                                        WHEN t.updated_by IS NULL OR TRIM(COALESCE(t.updated_by, '')) = '' THEN 'move_wh_to_shopfloor'

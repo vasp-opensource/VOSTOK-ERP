@@ -4,6 +4,7 @@ DROP PROCEDURE IF EXISTS import_do;
 -- Вставка в Transactions: полный набор реквизитов, как в ch_merge / deficit_*; в Import нет
 --   Recommend_purchprod, Order_*, Order_sv, Rework_*, Document_date — в SELECT даются NULL/0.
 --   Supplier, Location, Source, Initial_doc_no — из Import (см. create_table_Import / миграции БД).
+--   linked_transaction при вставке в Transactions — NULL (цепочка из Import не копируется).
 
 DELIMITER $$
 
@@ -134,7 +135,10 @@ BEGIN
             i.Suggestion = 'Импортировать',
             i.Order_import = 'Ожидание',
             i.Status_import = 'Новая',
-            i.linked_transaction = i.id,
+            i.linked_transaction   = CASE
+                WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
+                ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
+            END,
             i.updated_at = CURRENT_TIMESTAMP
         WHERE i.Status_import = 'Новая';
 
@@ -163,7 +167,10 @@ BEGIN
         INNER JOIN tmp_import_do_replace_change rc ON rc.parent_id = i.id
         SET
             i.Status_import = 'Отменено',
-            i.linked_transaction = i.id,
+            i.linked_transaction   = CASE
+                WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
+                ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
+            END,
             i.updated_at = CURRENT_TIMESTAMP;
 
         /* Первая новая: qty = -1 * (sure + maybe), Suggestion='Импортировать' */
@@ -184,7 +191,11 @@ BEGIN
             Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
-            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', rc.parent_id,
+            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            CASE
+                WHEN p.`linked_transaction` IS NULL OR TRIM(COALESCE(p.`linked_transaction`, '')) = '' THEN CAST(rc.parent_id AS CHAR)
+                ELSE CONCAT(TRIM(p.`linked_transaction`), '; ', rc.parent_id)
+            END,
             p.type, p.where_from, p.where_to, p.Quantity_of_parts_total, -1 * rc.can_total,
             p.Quantity_in_transactions, p.inProcess_purchase, p.inProcess_manufacturing,
             p.Quantity_in_warehouse, p.Quantity_in_kitting, p.Quantity_on_shopfloor,
@@ -219,7 +230,11 @@ BEGIN
             Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
-            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', rc.parent_id,
+            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            CASE
+                WHEN p.`linked_transaction` IS NULL OR TRIM(COALESCE(p.`linked_transaction`, '')) = '' THEN CAST(rc.parent_id AS CHAR)
+                ELSE CONCAT(TRIM(p.`linked_transaction`), '; ', rc.parent_id)
+            END,
             p.type, p.where_from, p.where_to, p.Quantity_of_parts_total, (rc.parent_qty + rc.can_total),
             p.Quantity_in_transactions, p.inProcess_purchase, p.inProcess_manufacturing,
             p.Quantity_in_warehouse, p.Quantity_in_kitting, p.Quantity_on_shopfloor,
@@ -253,6 +268,7 @@ BEGIN
           AND i.Suggestion = 'Импортировать'
           AND i.Order_import = 'Выполнить';
 
+        /* Копия в Transactions: linked_transaction не переносим (новая строка в журнале) — NULL. */
         INSERT INTO `Transactions` (
             ERP_ID, created_at, updated_at, created_by, updated_by, linked_transaction,
             type, where_from, where_to, Quantity_of_parts_total, Quantity_change, Status_transaction,
@@ -269,7 +285,8 @@ BEGIN
             Supplier, Location, Source, Initial_doc_no
         )
         SELECT
-            i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', i.linked_transaction,
+            i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            NULL,
             i.type, i.where_from, i.where_to, COALESCE(i.Quantity_of_parts_total, 0), COALESCE(i.Quantity_change, 0), 'В ожидании',
             i.Project, i.Target_assembly, i.Supplied_component_number, i.Component_revision, i.Component_name,
             COALESCE(i.Quantity_in_target_assembly, 0), COALESCE(i.Quantity_of_target_assemblies, 0), COALESCE(i.Components_quantity_in_assembly, 0), i.Component_type,

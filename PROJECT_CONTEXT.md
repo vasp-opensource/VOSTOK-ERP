@@ -65,7 +65,7 @@
 | created_by | varchar(255) | YES | | Export user | |
 | updated_by | varchar(255) | YES | | NULL | |
 | changed_by | varchar(255) | YES | | NULL | Имя хранимой процедуры, последней изменившей строку |
-| linked_transaction | int | YES | | NULL | |
+| linked_transaction | varchar(1024) | YES | | NULL | Цепочка id через «; » (как updated_by) |
 | type | enum('change','move') | YES | | change | |
 | where_from | enum('внешний','закупка','склад','цех','собственное производство') | NO | | внешний | |
 | where_to | enum('закупка','склад','цех','собственное производство','отгрузка','брак','изделие','доработка') | NO | | закупка | |
@@ -116,7 +116,7 @@
 | Cost_total_rub | float | YES | | NULL | |
 | Price_of_single_unit | double | YES | | NULL | VIRTUAL: `Cost_total_rub / Quantity_change`, если `Quantity_change` ≠ 0 и не NULL, иначе NULL |
 
-**Смысл:** журнал движений/изменений; связь с номенклатурой по `ERP_ID`; `linked_transaction` — связь с другой транзакцией; `Components_quantity_in_assembly` — снимок для данного ERP_ID (число компонентов в сборке), при порождении дочерних строк копируется с родителя; реквизиты компонента дублируются как снимок на момент операции.
+**Смысл:** журнал движений/изменений; связь с номенклатурой по `ERP_ID`; `linked_transaction` — цепочка id связанных строк (через `; `, не перезаписывать); `Components_quantity_in_assembly` — снимок для данного ERP_ID (число компонентов в сборке), при порождении дочерних строк копируется с родителя; реквизиты компонента дублируются как снимок на момент операции.
 
 **Сортировка в списках (NocoDB / отчёты):** по полю `ERP_ID` по возрастанию, при необходимости вторично по `id`. Для ускорения сортировки и фильтра выполните миграцию `sql/alter_transactions_index_erp_id.sql` (индекс `idx_erp_id`), если его ещё нет в БД.
 

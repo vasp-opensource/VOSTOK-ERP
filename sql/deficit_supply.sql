@@ -211,7 +211,10 @@ BEGIN
 
                 UPDATE `Transactions`
                    SET Status_transaction = 'Заменено',
-                       linked_transaction = v_tx_id,
+                       linked_transaction   = CASE
+                           WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                           ELSE CONCAT(TRIM(`linked_transaction`), '; ', v_tx_id)
+                       END,
                        Status_warehouse   = 'Норма',
                       updated_by         = CASE
                                                WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'deficit_supply'
@@ -237,7 +240,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -272,7 +279,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_cover_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -303,7 +314,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_remain_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -335,7 +350,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -370,7 +389,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_cover_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -401,7 +424,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_remain_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -433,7 +460,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -468,7 +499,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_cover_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -499,7 +534,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_remain_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -531,7 +570,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
@@ -562,7 +605,11 @@ BEGIN
                         Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_supply', 'deficit_supply',
+                        CASE
+                            WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                            ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                        END,
                         'change', 'внешний', 'склад', 0, v_req_qty, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,

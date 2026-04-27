@@ -1,7 +1,7 @@
 -- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Advanced_group + Status_warehouse,
 -- сумма Quantity_change; только Status_warehouse «В закупке» или «В изготовлении», Status_transaction «В ожидании».
--- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма», linked_transaction → суммарная строка.
--- Новая строка: linked_transaction = собственный id; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
+-- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма»; id суммарной строки дописывается в linked_transaction через "; ".
+-- Новая строка: id суммарной дописывается в linked_transaction; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
 -- Таблица Main не изменяется. Новые поля Transactions (Recommend_purchprod, Order_sv, Document_date, …) переносятся в суммарную строку.
 -- Блокировка: lock_ch_merge_same_advGroup
 
@@ -227,7 +227,10 @@ BEGIN
 
             UPDATE `Transactions` t
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`updated_at`         = NOW(),
                 t.`updated_by`         = CASE
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'ch_merge_same_advGroup'
@@ -242,7 +245,10 @@ BEGIN
              AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
              AND g.`Status_warehouse` = x.`Status_warehouse`
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`Status_transaction` = 'Заменено',
                 t.`Status_warehouse`   = 'Норма',
                 t.`updated_at`         = NOW(),

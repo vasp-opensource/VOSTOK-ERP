@@ -280,7 +280,10 @@ BEGIN
 
                 UPDATE `Transactions` t
                 SET
-                    t.`linked_transaction` = v_new_id,
+                    t.`linked_transaction` = CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                    END,
                     t.`Source`             = v_source,
                     t.`updated_at`         = NOW(),
                     t.`updated_by`         = CASE
@@ -295,7 +298,10 @@ BEGIN
                   ON g.`ERP_ID` = x.`ERP_ID`
                  AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
                 SET
-                    t.`linked_transaction` = v_new_id,
+                    t.`linked_transaction` = CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                    END,
                     t.`created_by`         = v_proc,
                     t.`Status_transaction` = 'Заменено',
                     t.`Status_warehouse` = 'Норма',
