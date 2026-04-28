@@ -79,15 +79,6 @@ BEGIN
 
     IF v_batch_lock = 1 THEN
         SET v_step_no = 1;
-        SET v_current_proc = 'return_kit_to_wh';
-        SET v_step_started = NOW(6);
-        CALL return_kit_to_wh();
-        SET v_step_finished = NOW(6);
-        INSERT INTO performance_log (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
-        VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
-                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
-
-        SET v_step_no = 2;
         SET v_current_proc = 'ch_merge_same_advGroup';
         SET v_step_started = NOW(6);
         CALL ch_merge_same_advGroup();
@@ -96,7 +87,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 3;
+        SET v_step_no = 2;
         SET v_current_proc = 'ch_outside_to_ownProd';
         SET v_step_started = NOW(6);
         CALL ch_outside_to_ownProd();
@@ -105,7 +96,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 4;
+        SET v_step_no = 3;
         SET v_current_proc = 'ch_outside_to_purch';
         SET v_step_started = NOW(6);
         CALL ch_outside_to_purch();
@@ -114,7 +105,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 5;
+        SET v_step_no = 4;
         SET v_current_proc = 'ch_ownprod_to_wh';
         SET v_step_started = NOW(6);
         CALL ch_ownprod_to_wh();
@@ -123,7 +114,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 6;
+        SET v_step_no = 5;
         SET v_current_proc = 'ch_purch_to_wh';
         SET v_step_started = NOW(6);
         CALL ch_purch_to_wh();
@@ -132,7 +123,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 7;
+        SET v_step_no = 6;
         SET v_current_proc = 'move_kit_to_shopfloor';
         SET v_step_started = NOW(6);
         CALL move_kit_to_shopfloor();
@@ -141,7 +132,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 8;
+        SET v_step_no = 7;
         SET v_current_proc = 'move_shop_to_fin';
         SET v_step_started = NOW(6);
         CALL move_shop_to_fin();
@@ -150,7 +141,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 9;
+        SET v_step_no = 8;
         SET v_current_proc = 'move_shop_to_wh';
         SET v_step_started = NOW(6);
         CALL move_shop_to_wh();
@@ -159,7 +150,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 10;
+        SET v_step_no = 9;
         SET v_current_proc = 'return_shopfloor_to_wh';
         SET v_step_started = NOW(6);
         CALL return_shopfloor_to_wh();
@@ -168,7 +159,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 11;
+        SET v_step_no = 10;
         SET v_current_proc = 'deficit_wh';
         SET v_step_started = NOW(6);
         CALL deficit_wh();
@@ -177,7 +168,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 12;
+        SET v_step_no = 11;
         SET v_current_proc = 'deficit_supply';
         SET v_step_started = NOW(6);
         CALL deficit_supply();
@@ -186,7 +177,7 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 13;
+        SET v_step_no = 12;
         SET v_current_proc = 'import_check';
         SET v_step_started = NOW(6);
         CALL import_check();
@@ -195,10 +186,19 @@ BEGIN
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
-        SET v_step_no = 14;
+        SET v_step_no = 13;
         SET v_current_proc = 'import_do';
         SET v_step_started = NOW(6);
         CALL import_do();
+        SET v_step_finished = NOW(6);
+        INSERT INTO performance_log (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 14;
+        SET v_current_proc = 'recommend_call';
+        SET v_step_started = NOW(6);
+        CALL recommend_call();
         SET v_step_finished = NOW(6);
         INSERT INTO performance_log (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
