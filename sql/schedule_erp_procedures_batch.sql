@@ -205,6 +205,15 @@ BEGIN
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
         SET v_step_no = 15;
+        SET v_current_proc = 'recommend_call';
+        SET v_step_started = NOW(6);
+        CALL recommend_call();
+        SET v_step_finished = NOW(6);
+        INSERT INTO performance_log (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'run_erp_scheduled_batch', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 16;
         SET v_current_proc = 'check_data_integrity';
         SET v_step_started = NOW(6);
         CALL check_data_integrity();

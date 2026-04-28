@@ -12,10 +12,13 @@ DELIMITER $$
 CREATE PROCEDURE import_do()
 BEGIN
     DECLARE v_lock_ok INT DEFAULT 0;
+    DECLARE v_first_transaction_id BIGINT DEFAULT 0;
+    DECLARE v_inserted_transactions_count BIGINT DEFAULT 0;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
         IF v_lock_ok = 1 THEN
             DO RELEASE_LOCK('lock_process_import_do');
         END IF;
@@ -301,12 +304,31 @@ BEGIN
         FROM `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id;
 
+        SET v_inserted_transactions_count = ROW_COUNT();
+        SET v_first_transaction_id = LAST_INSERT_ID();
+
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+        CREATE TEMPORARY TABLE tmp_recommend_change_unite_clear_ids (
+            id INT UNSIGNED NOT NULL PRIMARY KEY
+        );
+
+        IF v_inserted_transactions_count > 0 THEN
+            INSERT INTO tmp_recommend_change_unite_clear_ids (id)
+            SELECT t.id
+            FROM `Transactions` t
+            WHERE t.id >= v_first_transaction_id
+              AND t.id < (v_first_transaction_id + v_inserted_transactions_count);
+
+            CALL recommend_change_unite_clear('import_do');
+        END IF;
+
         UPDATE `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
         SET
             i.Status_import = 'Импортировано',
             i.updated_at = CURRENT_TIMESTAMP;
 
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_to_transactions;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_initial_ids;
 
