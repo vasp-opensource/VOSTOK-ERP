@@ -1,6 +1,4 @@
 ﻿-- ch_outside_unite: общая логика неттинга change (внешний→склад), Main, merge по группам ERP_ID + Advanced_group.
--- Перед любыми изменениями Transactions по tmp_ch_outside_unite_ids: recommend_change_unite_clear (recommend_change_unite_clear.sql)
--- сбрасывает Recommend_purchprod.
 -- Вызывается после заполнения tmp_ch_outside_unite_ids (входящие + партнёры) в ch_outside_to_purch / ch_outside_to_ownProd.
 -- Параметры: блокировка, Source, метка процедуры (created_by/updated_by, исключение merge-строк из партнёров — в отборе у вызывающего),
 -- статусы склада для массового UPDATE, суммарной вставки и одиночной строки, режим поля Main (закупка / изготовление).
@@ -46,9 +44,6 @@ BEGIN
 
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
-
-        /* 1) Сброс рекомендаций по всем строкам неттинга (перед любыми UPDATE/вставками). */
-        CALL `recommend_change_unite_clear`(p_proc_name);
 
         /* 2) Склад и Source: в «закупке/изготовлении» только неотрицательные qty.
            Отрицательный change не должен попадать в контур приёмки (ch_*_to_wh) до неттинга:

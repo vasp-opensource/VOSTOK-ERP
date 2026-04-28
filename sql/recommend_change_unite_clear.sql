@@ -1,6 +1,7 @@
-﻿-- recommend_change_unite_clear: сброс Recommend_purchprod по id из tmp_ch_outside_unite_ids.
--- Вызывается из ch_outside_unite (и при необходимости из других сценариев с той же temp-таблицей).
--- tmp_ch_outside_unite_ids должна существовать до вызова (заполняется вызывающей логикой неттинга).
+﻿-- recommend_change_unite_clear: сброс Recommend_purchprod.
+-- Вход: tmp_recommend_change_unite_clear_ids(id) с текущими обрабатываемыми строками.
+-- Процедура сама находит смежные change-строки по Supplied_component_number
+-- в Status_warehouse («Новая», «В закупке», «В изготовлении»).
 
 DELIMITER $$
 
@@ -20,8 +21,20 @@ BEGIN
     AND c.COLUMN_NAME = 'updated_by'
   LIMIT 1;
 
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_change_unite_clear_scope`;
+  CREATE TEMPORARY TABLE `tmp_recommend_change_unite_clear_scope` (
+    `pnum` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
+    KEY `idx_scope_pnum` (`pnum`)
+  ) AS
+  SELECT DISTINCT
+    CAST(LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `pnum`
+  FROM `Transactions` t
+  INNER JOIN `tmp_recommend_change_unite_clear_ids` seed ON seed.id = t.id;
+
   UPDATE `Transactions` t
-  INNER JOIN `tmp_ch_outside_unite_ids` x ON x.id = t.id
+  LEFT JOIN `tmp_recommend_change_unite_clear_ids` seed ON seed.id = t.id
+  LEFT JOIN `tmp_recommend_change_unite_clear_scope` s_part
+    ON s_part.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
   SET
     t.`Recommend_purchprod` = NULL,
     t.`updated_at`          = NOW(),
@@ -42,7 +55,17 @@ BEGIN
              '; ' COLLATE utf8mb4_unicode_ci,
              CAST(p_proc_name AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
            ), v_updated_by_max)
-    END;
+    END
+  WHERE
+    seed.id IS NOT NULL
+    OR (
+      t.`type` = 'change'
+      AND t.`Status_transaction` = 'В ожидании'
+      AND t.`Status_warehouse` IN ('Новая', 'В закупке', 'В изготовлении')
+      AND s_part.`pnum` IS NOT NULL
+    );
+
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_change_unite_clear_scope`;
 END$$
 
 DELIMITER ;

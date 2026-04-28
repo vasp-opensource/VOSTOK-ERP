@@ -1,10 +1,14 @@
--- ch_outside_to_purch: передача change «внешний → склад» в закупку (Order_purch «В закупке»/«Оплачено» и Order_prod = «В закупку»).
+-- ch_outside_to_purch: передача change «внешний → склад» в закупку.
+-- Критерии входящих строк: либо Order_purch «В закупке»/«Оплачено» и Order_prod «В закупку»,
+-- либо Order_purch «В закупке» и Recommend_purchprod «В закупку»/«Уточнить ревизию в закупке».
 -- Убедитесь, что значение «В закупку» есть в enum Order_prod в вашей БД.
 --
 -- Как ch_outside_to_ownProd: отбор в tmp_ch_outside_unite_ids, неттинг и Main — в ch_outside_unite (там новые реквизиты Transactions, Main.Quantity_of_rework по DEFAULT).
 -- Блокировка и транзакция внутри ch_outside_unite.
 --
 -- #1137: во временной не дважды tmp в одном запросе; партнёр с тем же ERP_ID + Advanced_group (см. <=> ).
+-- Перед ch_outside_unite передаёт в recommend_change_unite_clear только текущие входящие строки;
+-- смежные строки для снятия Recommend_purchprod ищет сама recommend_change_unite_clear.
 
 DELIMITER $$
 
@@ -32,8 +36,16 @@ BEGIN
     FROM `Transactions` t
     WHERE t.Status_warehouse IN ('Новая', 'Дефицит закупки')
       AND t.Status_transaction = 'В ожидании'
-      AND t.Order_purch IN ('В закупке', 'Оплачено')
-      AND t.Order_prod = 'В закупку'
+      AND (
+          (
+              t.Order_purch IN ('В закупке', 'Оплачено')
+              AND t.Order_prod = 'В закупку'
+          )
+          OR (
+              t.Order_purch = 'В закупке'
+              AND t.Recommend_purchprod IN ('В закупку', 'Уточнить ревизию в закупке')
+          )
+      )
       AND t.type = 'change'
       AND t.where_from = 'внешний'
       AND t.where_to = 'склад';
@@ -80,6 +92,19 @@ BEGIN
     SELECT DISTINCT ERP_ID
     FROM tmp_ch_outside_unite_ids;
 
+    /* Передаём только текущие входящие строки. Смежные строки clear-процедура найдёт сама. */
+    DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+    CREATE TEMPORARY TABLE tmp_recommend_change_unite_clear_ids (
+        id INT UNSIGNED NOT NULL PRIMARY KEY
+    );
+
+    INSERT INTO tmp_recommend_change_unite_clear_ids (id)
+    SELECT id
+    FROM tmp_ch_outside_unite_ids
+    WHERE is_incoming = 1;
+
+    CALL recommend_change_unite_clear('ch_outside_to_purch');
+
     CALL ch_outside_unite(
         'lock_process_purchase_change_to_main',
         'Покупное',
@@ -104,6 +129,7 @@ BEGIN
       AND t.`Status_transaction` = 'В ожидании'
       AND t.`Status_warehouse` = 'Ожидание поставки';
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
 END$$
 
