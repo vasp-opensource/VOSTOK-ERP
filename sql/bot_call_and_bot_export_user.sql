@@ -1,7 +1,7 @@
 -- Набор процедур bot_* для имитации действий пользователей.
 -- Счётчики сценариев в bot_call: FLOOR(5 + RAND() * 11) → целое [5..15].
 -- purch_cost в bot_call: FLOOR(5000 + RAND() * 145001) → целое [5000..150000].
--- При UPDATE `Transactions`/`Import`: linked_transaction дополняется (не затирается), как в deficit / move_*.
+-- При UPDATE `Transactions`/`Import`: linked_transaction дополняется (не затирается), как в move_*.
 
 DELIMITER $$
 
@@ -53,7 +53,9 @@ BEGIN
             `Project`, `Target_assembly`, `Supplied_component_number`, `Component_revision`, `Component_name`,
             `Quantity_in_target_assembly`, `Quantity_of_target_assemblies`,
             `Component_type`, `For_supplied_as_assembly_components_provided_by_supplier`,
-            `Components_quantity_in_assembly`, `Part_material`, `Producer`, `Catalogue_number`,
+            `Components_quantity_in_assembly`,
+            `Assembly_batch_id`, `Assembly_batch_name`, `Assembly_batch_status`, `Assembly_batch_priority`,
+            `Part_material`, `Producer`, `Catalogue_number`,
             `Producer_article`, `Distributer`, `Distributer_article`, `MBOM_type`,
             `Mass_kg`, `Unit_of_measure`, `Height`, `Width`, `Length`,
             `Advanced_group`, `Address`, `Document_no`, `Zakaz_no`,
@@ -67,7 +69,9 @@ BEGIN
             r.`Project`, r.`Target_assembly`, r.`Supplied_component_number`, r.`Component_revision`, r.`Component_name`,
             r.`Quantity_in_target_assembly`, r.`Quantity_of_target_assemblies`,
             r.`Component_type`, r.`For_supplied_as_assembly_components_provided_by_supplier`,
-            r.`Components_quantity_in_assembly`, r.`Part_material`, r.`Producer`, r.`Catalogue_number`,
+            r.`Components_quantity_in_assembly`,
+            r.`Assembly_batch_id`, r.`Assembly_batch_name`, r.`Assembly_batch_status`, r.`Assembly_batch_priority`,
+            r.`Part_material`, r.`Producer`, r.`Catalogue_number`,
             r.`Producer_article`, r.`Distributer`, r.`Distributer_article`, r.`MBOM_type`,
             r.`Mass_kg`, r.`Unit_of_measure`, r.`Height`, r.`Width`, r.`Length`,
             r.`Advanced_group`, r.`Address`, r.`Document_no`, r.`Zakaz_no`,

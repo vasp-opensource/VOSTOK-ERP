@@ -28,6 +28,10 @@ proc: BEGIN
     DECLARE v_source_qty_target_assemblies DECIMAL(18,6) DEFAULT NULL;
     DECLARE v_source_for_supplied TEXT DEFAULT NULL;
     DECLARE v_source_components_qty_in_assembly DECIMAL(18,6) DEFAULT NULL;
+    DECLARE v_source_assembly_batch_id VARCHAR(255) DEFAULT NULL;
+    DECLARE v_source_assembly_batch_name TEXT DEFAULT NULL;
+    DECLARE v_source_assembly_batch_status VARCHAR(64) DEFAULT NULL;
+    DECLARE v_source_assembly_batch_priority INT DEFAULT NULL;
     DECLARE v_source_advanced_group VARCHAR(255) DEFAULT NULL;
     DECLARE v_source_document_no VARCHAR(255) DEFAULT NULL;
     DECLARE v_source_document_date DATETIME DEFAULT NULL;
@@ -67,6 +71,10 @@ proc: BEGIN
         t.Quantity_of_target_assemblies,
         t.For_supplied_as_assembly_components_provided_by_supplier,
         t.Components_quantity_in_assembly,
+        t.Assembly_batch_id,
+        t.Assembly_batch_name,
+        t.Assembly_batch_status,
+        t.Assembly_batch_priority,
         t.Advanced_group,
         t.Document_no,
         t.Document_date,
@@ -83,6 +91,10 @@ proc: BEGIN
         v_source_qty_target_assemblies,
         v_source_for_supplied,
         v_source_components_qty_in_assembly,
+        v_source_assembly_batch_id,
+        v_source_assembly_batch_name,
+        v_source_assembly_batch_status,
+        v_source_assembly_batch_priority,
         v_source_advanced_group,
         v_source_document_no,
         v_source_document_date,
@@ -191,6 +203,10 @@ proc: BEGIN
         Component_type,
         For_supplied_as_assembly_components_provided_by_supplier,
         Components_quantity_in_assembly,
+        Assembly_batch_id,
+        Assembly_batch_name,
+        Assembly_batch_status,
+        Assembly_batch_priority,
         Part_material,
         Producer,
         Catalogue_number,
@@ -250,6 +266,10 @@ proc: BEGIN
         v_benchmark_component_type,
         v_source_for_supplied,
         v_source_components_qty_in_assembly,
+        v_source_assembly_batch_id,
+        v_source_assembly_batch_name,
+        v_source_assembly_batch_status,
+        v_source_assembly_batch_priority,
         v_benchmark_part_material,
         v_benchmark_producer,
         v_benchmark_catalogue_number,
