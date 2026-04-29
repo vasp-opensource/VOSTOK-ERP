@@ -125,7 +125,7 @@ BEGIN
              'recommend_change_purchprod' COLLATE utf8mb4_unicode_ci,
              REPLACE(t.`updated_by` COLLATE utf8mb4_unicode_ci, '; ', ',')
            ) > 0 THEN t.`updated_by`
-      ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'recommend_change_purchprod'), v_updated_by_max)
+      ELSE LEFT(CONCAT(TRIM(TRAILING ';' FROM TRIM(t.`updated_by`)), '; ', 'recommend_change_purchprod'), v_updated_by_max)
     END
   WHERE
     t.`type` = 'change'
@@ -147,7 +147,7 @@ BEGIN
              'recommend_change_purchprod' COLLATE utf8mb4_unicode_ci,
              REPLACE(t.`updated_by` COLLATE utf8mb4_unicode_ci, '; ', ',')
            ) > 0 THEN t.`updated_by`
-      ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'recommend_change_purchprod'), v_updated_by_max)
+      ELSE LEFT(CONCAT(TRIM(TRAILING ';' FROM TRIM(t.`updated_by`)), '; ', 'recommend_change_purchprod'), v_updated_by_max)
     END
   WHERE
     t.`type` = 'change'
@@ -169,7 +169,7 @@ BEGIN
              'recommend_change_purchprod' COLLATE utf8mb4_unicode_ci,
              REPLACE(t.`updated_by` COLLATE utf8mb4_unicode_ci, '; ', ',')
            ) > 0 THEN t.`updated_by`
-      ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'recommend_change_purchprod'), v_updated_by_max)
+      ELSE LEFT(CONCAT(TRIM(TRAILING ';' FROM TRIM(t.`updated_by`)), '; ', 'recommend_change_purchprod'), v_updated_by_max)
     END
   WHERE
     t.`type` = 'change'
@@ -199,7 +199,7 @@ BEGIN
              'recommend_change_purchprod' COLLATE utf8mb4_unicode_ci,
              REPLACE(t.`updated_by` COLLATE utf8mb4_unicode_ci, '; ', ',')
            ) > 0 THEN t.`updated_by`
-      ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'recommend_change_purchprod'), v_updated_by_max)
+      ELSE LEFT(CONCAT(TRIM(TRAILING ';' FROM TRIM(t.`updated_by`)), '; ', 'recommend_change_purchprod'), v_updated_by_max)
     END
   WHERE
     t.`type` = 'change'

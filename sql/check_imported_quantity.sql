@@ -4,10 +4,17 @@
 
 DELIMITER $$
 
+DROP PROCEDURE IF EXISTS check_imported_quantity$$
+
 CREATE PROCEDURE check_imported_quantity()
 BEGIN
     /* Важно: процедура рассчитана на запуск ИЗ check_data_integrity,
        где уже создана tmp_integrity_candidates(procedure_name, ERP_ID, error_message). */
+    CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_integrity_candidates` (
+        `procedure_name` VARCHAR(128) NOT NULL,
+        `ERP_ID` VARCHAR(255) NULL,
+        `error_message` TEXT NOT NULL
+    );
 
     INSERT INTO `tmp_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
     SELECT
