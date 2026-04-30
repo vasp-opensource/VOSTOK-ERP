@@ -6,27 +6,27 @@ CREATE PROCEDURE replace_new(
     IN p_source_transaction_id BIGINT
 )
 proc: BEGIN
-    DECLARE v_proc_name VARCHAR(64) DEFAULT 'replace_new';
+    DECLARE v_proc_name VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'replace_new';
 
     DECLARE v_source_id BIGINT DEFAULT NULL;
-    DECLARE v_source_replace_to VARCHAR(255) DEFAULT NULL;
-    DECLARE v_source_type VARCHAR(64) DEFAULT NULL;
-    DECLARE v_source_where_from VARCHAR(128) DEFAULT NULL;
-    DECLARE v_source_where_to VARCHAR(128) DEFAULT NULL;
+    DECLARE v_source_replace_to VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_type VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_where_from VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_where_to VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
     DECLARE v_source_qty_total DECIMAL(18,6) DEFAULT 0;
     DECLARE v_source_qty_change DECIMAL(18,6) DEFAULT 0;
-    DECLARE v_source_status_transaction VARCHAR(64) DEFAULT NULL;
-    DECLARE v_source_status_warehouse VARCHAR(64) DEFAULT NULL;
-    DECLARE v_source_order_purch VARCHAR(128) DEFAULT NULL;
-    DECLARE v_source_order_wh VARCHAR(128) DEFAULT NULL;
-    DECLARE v_source_order_prod VARCHAR(128) DEFAULT NULL;
-    DECLARE v_source_order_otk VARCHAR(128) DEFAULT NULL;
+    DECLARE v_source_status_transaction VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_status_warehouse VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_order_purch VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_order_wh VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_order_prod VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_order_otk VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
     DECLARE v_link_row_id BIGINT DEFAULT NULL;
     DECLARE v_new_id_move BIGINT DEFAULT NULL;
     DECLARE v_new_id_change BIGINT DEFAULT NULL;
     DECLARE v_created_from DATETIME(6) DEFAULT NULL;
-    DECLARE v_link_token VARCHAR(64) DEFAULT NULL;
+    DECLARE v_link_token VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
     SELECT
         t.id,
@@ -80,7 +80,7 @@ proc: BEGIN
     SELECT t.id
     INTO v_link_row_id
     FROM Transactions t
-    WHERE t.ERP_ID = v_source_replace_to
+    WHERE t.ERP_ID COLLATE utf8mb4_unicode_ci = v_source_replace_to COLLATE utf8mb4_unicode_ci
     ORDER BY t.created_at ASC, t.id ASC
     LIMIT 1;
 
@@ -138,7 +138,7 @@ proc: BEGIN
         FROM Transactions t
         WHERE t.linked_transaction = v_source_id
           AND t.created_by = 'create_row'
-          AND t.ERP_ID = v_source_replace_to
+          AND t.ERP_ID COLLATE utf8mb4_unicode_ci = v_source_replace_to COLLATE utf8mb4_unicode_ci
           AND t.type = 'move'
           AND t.created_at >= v_created_from
         ORDER BY t.created_at DESC, t.id DESC
@@ -149,7 +149,7 @@ proc: BEGIN
         FROM Transactions t
         WHERE t.linked_transaction = v_source_id
           AND t.created_by = 'create_row'
-          AND t.ERP_ID = v_source_replace_to
+          AND t.ERP_ID COLLATE utf8mb4_unicode_ci = v_source_replace_to COLLATE utf8mb4_unicode_ci
           AND t.type = 'change'
           AND t.created_at >= v_created_from
         ORDER BY t.created_at DESC, t.id DESC
@@ -202,7 +202,7 @@ proc: BEGIN
         FROM Transactions t
         WHERE t.linked_transaction = v_source_id
           AND t.created_by = 'create_row'
-          AND t.ERP_ID = v_source_replace_to
+          AND t.ERP_ID COLLATE utf8mb4_unicode_ci = v_source_replace_to COLLATE utf8mb4_unicode_ci
           AND t.type = 'change'
           AND t.created_at >= v_created_from
         ORDER BY t.created_at DESC, t.id DESC

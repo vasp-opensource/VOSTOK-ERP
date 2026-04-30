@@ -1,9 +1,9 @@
--- move_wh_to_shopfloor: (1) move склад→брак|отгрузка|изделие; (2) объединение change по Advanced_group.
--- Порядок: сначала move (приоритет: брак → отгрузка → изделие), затем объединение change.
+-- move_wh_to_shopfloor: (1) move склад→брак|доработка|отгрузка|изделие; (2) объединение change по Advanced_group.
+-- Порядок: сначала move (приоритет: брак → доработка → отгрузка → изделие), затем объединение change.
 -- Блокировка: lock_move_wh_to_shopfloor (ожидание до 30 с).
 -- Колонка Imported в Transactions не используется (нет в схеме).
 --
--- Отбор move: where_to только «брак», «отгрузка», «изделие»; Status_warehouse = «Новая».
+-- Отбор move: where_to только «брак», «доработка», «отгрузка», «изделие»; Status_warehouse = «Новая».
 -- При Order_wh = «В комплектации» задаётся Status_warehouse = «Комплектация» (полное и частичное списание со склада).
 -- Source: копируется с родителя в дочерние move; в объединённом change — «Разные», если в группе разные Source, иначе общее значение.
 -- Объединение change только со складом «Новая» или «Дефицит закупки» (как вход в ch_outside_to_purch): иначе в сумму попадают
@@ -43,15 +43,15 @@ BEGIN
     FROM Transactions
     WHERE type = 'move'
       AND where_from = 'склад'
-      AND where_to IN ('брак', 'отгрузка', 'изделие')
+      AND where_to IN ('брак', 'доработка', 'отгрузка', 'изделие')
       AND (
            Status_transaction IS NULL
         OR TRIM(COALESCE(Status_transaction, '')) = ''
         OR Status_transaction = 'В ожидании'
       )
-      AND Order_wh IS NULL
+      AND (Order_wh IS NULL OR Order_wh = 'В комплектации')
       AND Status_warehouse = 'Новая'
-    ORDER BY FIELD(where_to, 'брак', 'отгрузка', 'изделие'), id;
+    ORDER BY FIELD(where_to, 'брак', 'доработка', 'отгрузка', 'изделие'), id;
 
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
 

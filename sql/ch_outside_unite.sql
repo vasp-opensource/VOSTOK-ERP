@@ -1,4 +1,4 @@
-﻿-- ch_outside_unite: общая логика неттинга change (внешний→склад), Main, merge по группам ERP_ID + Advanced_group.
+-- ch_outside_unite: общая логика неттинга change (внешний→склад), Main, merge по группам ERP_ID + Advanced_group.
 -- Перед любыми изменениями Transactions по tmp_ch_outside_unite_ids: recommend_change_unite_clear (recommend_change_unite_clear.sql)
 -- сбрасывает Recommend_purchprod.
 -- Вызывается после заполнения tmp_ch_outside_unite_ids (входящие + партнёры) в ch_outside_to_purch / ch_outside_to_ownProd.

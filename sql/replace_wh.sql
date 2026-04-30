@@ -6,27 +6,27 @@ CREATE PROCEDURE replace_wh(
   IN p_source_transaction_id BIGINT
 )
 proc: BEGIN
-  DECLARE v_proc_name VARCHAR(64) DEFAULT 'replace_wh';
+  DECLARE v_proc_name VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'replace_wh';
 
   DECLARE v_source_id BIGINT DEFAULT NULL;
-  DECLARE v_source_type VARCHAR(32) DEFAULT NULL;
-  DECLARE v_replace_to VARCHAR(255) DEFAULT NULL;
-  DECLARE v_source_where_from VARCHAR(128) DEFAULT NULL;
-  DECLARE v_source_where_to VARCHAR(128) DEFAULT NULL;
+  DECLARE v_source_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_replace_to VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_where_from VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_where_to VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
   DECLARE v_source_qty_total DECIMAL(18,6) DEFAULT 0;
-  DECLARE v_source_status_transaction VARCHAR(64) DEFAULT NULL;
-  DECLARE v_source_status_warehouse VARCHAR(64) DEFAULT NULL;
-  DECLARE v_source_order_purch VARCHAR(128) DEFAULT NULL;
-  DECLARE v_source_order_wh VARCHAR(128) DEFAULT NULL;
-  DECLARE v_source_order_prod VARCHAR(128) DEFAULT NULL;
-  DECLARE v_source_order_otk VARCHAR(128) DEFAULT NULL;
+  DECLARE v_source_status_transaction VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_status_warehouse VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_order_purch VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_order_wh VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_order_prod VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+  DECLARE v_source_order_otk VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
   DECLARE v_quantity_available DECIMAL(18,6) DEFAULT 0;
   DECLARE v_quantity_replaced DECIMAL(18,6) DEFAULT 0;
   DECLARE v_split_from DATETIME(6) DEFAULT NULL;
   DECLARE v_created_from DATETIME(6) DEFAULT NULL;
   DECLARE v_new_id BIGINT DEFAULT NULL;
-  DECLARE v_link_token VARCHAR(64) DEFAULT NULL;
+  DECLARE v_link_token VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
   SELECT
     t.id,
@@ -67,7 +67,7 @@ proc: BEGIN
   SELECT COALESCE(m.Quantity_in_warehouse, 0)
   INTO v_quantity_available
   FROM Main m
-  WHERE m.ERP_ID = v_replace_to
+  WHERE m.ERP_ID COLLATE utf8mb4_unicode_ci = v_replace_to COLLATE utf8mb4_unicode_ci
   LIMIT 1;
 
   IF v_quantity_available < v_quantity_replaced THEN
@@ -79,7 +79,7 @@ proc: BEGIN
     FROM Transactions t
     WHERE t.created_by = 'split'
       AND t.type = 'move'
-      AND t.linked_transaction = CAST(p_source_transaction_id AS CHAR)
+      AND t.linked_transaction COLLATE utf8mb4_unicode_ci = CAST(p_source_transaction_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
       AND t.created_at >= v_split_from
     ORDER BY t.created_at ASC, t.id ASC
     LIMIT 1;
@@ -114,8 +114,8 @@ proc: BEGIN
     FROM Transactions t
     WHERE t.created_by = 'create_row'
       AND t.type = 'move'
-      AND t.ERP_ID = v_replace_to
-      AND t.linked_transaction = v_source_id
+      AND t.ERP_ID COLLATE utf8mb4_unicode_ci = v_replace_to COLLATE utf8mb4_unicode_ci
+      AND t.linked_transaction COLLATE utf8mb4_unicode_ci = CAST(v_source_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
       AND t.created_at >= v_created_from
     ORDER BY t.created_at DESC, t.id DESC
     LIMIT 1;

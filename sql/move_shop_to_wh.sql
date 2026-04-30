@@ -1,4 +1,4 @@
--- move_shop_to_wh: возврат с цеха на склад (move, вернуть на склад / в сборке).
+-- move_shop_to_wh: возврат с цеха на склад (move, вернуть на склад из финальных статусов цеха).
 -- Блокировка: lock_return_shopfloor_to_warehouse
 -- Чтение Main: MAX+COUNT — без NOT FOUND при отсутствии строки (общий handler с курсором).
 -- Меняются только счётчики Main, Status_* и аудит в Transactions; прочие реквизиты строк не трогаем.
@@ -25,7 +25,7 @@ BEGIN
           AND t.Status_transaction = 'В ожидании'
           AND t.Order_wh = 'Принято на склад'
           AND t.Order_prod = 'Вернуть на склад'
-          AND t.Status_warehouse = 'В сборке'
+          AND t.Status_warehouse IN ('Утилизация', 'Сборка', 'Упаковка', 'Доработка')
         ORDER BY t.id;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;

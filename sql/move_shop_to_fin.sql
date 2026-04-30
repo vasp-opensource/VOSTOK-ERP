@@ -1,6 +1,7 @@
--- move_shop_to_fin: закрытие move склад→брак / отгрузка / изделие после комплектации на цех.
+-- move_shop_to_fin: закрытие move склад→брак / отгрузка / изделие / доработка после комплектации на цех.
 -- Отбор: Status_warehouse и пары Order_prod + Order_OTK по цели; списание с Quantity_on_shopfloor
--- в Main: брак → Quantity_of_losses; отгрузка → Quantity_shipped; изделие → Quantity_implemented
+-- в Main: брак → Quantity_of_losses; отгрузка → Quantity_shipped; изделие → Quantity_implemented; доработка → Quantity_of_rework
+-- Промежуточные строки после приёмки с комплектации на цех (Order_prod='Принято со склада') не закрываются.
 -- (в ТЗ иногда: Quantity_loss / Quantity_finised — здесь используются фактические имена колонок Main).
 -- Транзакция: Status_transaction = Исполнено; Status_warehouse и прочие реквизиты строки не меняем.
 -- Блокировка: lock_move_shop_to_fin
@@ -27,8 +28,9 @@ BEGIN
         FROM `Transactions` t
         WHERE t.type = 'move'
           AND t.where_from = 'склад'
-          AND t.where_to IN ('брак', 'отгрузка', 'изделие')
+          AND t.where_to IN ('брак', 'отгрузка', 'изделие', 'доработка')
           AND t.Status_transaction = 'В ожидании'
+          AND (t.Order_prod IS NULL OR t.Order_prod in ("Изготовлено", "Отгружено", "Забраковать"))
           AND (
               (t.where_to = 'брак'
                AND t.Status_warehouse = 'Утилизация'
@@ -42,6 +44,11 @@ BEGIN
               OR
               (t.where_to = 'изделие'
                AND t.Status_warehouse = 'Сборка'
+               AND t.Order_prod = 'Изготовлено'
+               AND t.Order_OTK = 'Принято')
+              OR
+              (t.where_to = 'доработка'
+               AND t.Status_warehouse = 'Доработка'
                AND t.Order_prod = 'Изготовлено'
                AND t.Order_OTK = 'Принято')
           )
@@ -91,6 +98,7 @@ BEGIN
                    m.Quantity_of_losses    = m.Quantity_of_losses + IF(v_where_to = 'брак', v_qty, 0),
                    m.Quantity_shipped      = m.Quantity_shipped + IF(v_where_to = 'отгрузка', v_qty, 0),
                    m.Quantity_implemented  = m.Quantity_implemented + IF(v_where_to = 'изделие', v_qty, 0),
+                   m.Quantity_of_rework    = m.Quantity_of_rework + IF(v_where_to = 'доработка', v_qty, 0),
                    m.updated_at            = CURRENT_TIMESTAMP,
                    m.updated_by            = 'move_shop_to_fin'
              WHERE m.ERP_ID = v_erp_id;

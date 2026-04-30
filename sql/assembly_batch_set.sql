@@ -15,8 +15,6 @@ BEGIN
   DECLARE v_move_project TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
   DECLARE v_move_advanced_group TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
   DECLARE v_updated_by_max INT DEFAULT 2000;
-  DECLARE v_chars VARCHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  DECLARE v_batch_exists INT DEFAULT 0;
 
   SELECT COALESCE(c.CHARACTER_MAXIMUM_LENGTH, 2000)
     INTO v_updated_by_max
@@ -76,35 +74,7 @@ BEGIN
 
     IF v_batch_id IS NULL OR TRIM(COALESCE(v_batch_id, '' COLLATE utf8mb4_unicode_ci)) = '' COLLATE utf8mb4_unicode_ci THEN
       SET v_batch_name = v_component_name;
-
-      generate_batch_id: LOOP
-        SET v_batch_id = CONCAT(
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1),
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1),
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1),
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1),
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1),
-          SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1)
-        );
-
-        SELECT COUNT(*)
-          INTO v_batch_exists
-        FROM (
-          SELECT t.`Assembly_batch_id`
-          FROM `Transactions` t
-          WHERE t.`Assembly_batch_id` COLLATE utf8mb4_unicode_ci =
-                v_batch_id COLLATE utf8mb4_unicode_ci
-          UNION ALL
-          SELECT ab.`Assembly_batch_id`
-          FROM `Assembly_batches` ab
-          WHERE ab.`Assembly_batch_id` COLLATE utf8mb4_unicode_ci =
-                v_batch_id COLLATE utf8mb4_unicode_ci
-        ) existing_batches;
-
-        IF v_batch_exists = 0 THEN
-          LEAVE generate_batch_id;
-        END IF;
-      END LOOP;
+      CALL `assembly_batch_id_create`(v_batch_id);
 
       INSERT INTO `Assembly_batches` (
         `created_at`,

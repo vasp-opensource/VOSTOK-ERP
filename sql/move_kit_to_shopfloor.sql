@@ -1,10 +1,10 @@
--- move_kit_to_shopfloor: перенос из комплектации (kitting) по move склад→брак / отгрузка / изделие.
+-- move_kit_to_shopfloor: перенос из комплектации (kitting) по move склад→брак / отгрузка / изделие / доработка.
 -- Блокировка: lock_move_wh_to_shopfloor (как в вашем скрипте; при параллели с move_wh_to_shopfloor учитывайте конфликт имён блокировки).
 -- Лог: proc_transaction_move_log (level, message, tx_id, erp_id).
 --
 -- Вход: Status_warehouse = Комплектация, Order_wh = Списано со склада, Order_prod = Принято со склада.
 -- Транзакция не завершается (остаётся «В ожидании»), Status_warehouse после обработки:
---   брак → Утилизация, отгрузка → Упаковка, изделие → Сборка.
+--   брак → Утилизация, отгрузка → Упаковка, изделие → Сборка, доработка → Доработка.
 -- Вставки в Transactions — полный список реквизитов (Recommend_purchprod, Order_sv, Document_date, Rework_*, …)
 --   как в deficit_supply; копирование с исходной строки, кроме количеств / Status_warehouse.
 
@@ -35,7 +35,7 @@ BEGIN
         FROM `Transactions` t
         WHERE t.type = 'move'
           AND t.where_from = 'склад'
-          AND t.where_to IN ('брак', 'отгрузка', 'изделие')
+          AND t.where_to IN ('брак', 'отгрузка', 'изделие', 'доработка')
           AND (t.Status_transaction IS NULL OR t.Status_transaction = 'В ожидании')
           AND t.Status_warehouse = 'Комплектация'
           AND t.Order_wh = 'Списано со склада'
@@ -136,6 +136,7 @@ BEGIN
                            WHEN 'брак' THEN 'Утилизация'
                            WHEN 'отгрузка' THEN 'Упаковка'
                            WHEN 'изделие' THEN 'Сборка'
+                           WHEN 'доработка' THEN 'Доработка'
                            ELSE 'Норма'
                        END,
                        linked_transaction   = CASE
@@ -209,6 +210,7 @@ BEGIN
                     WHEN 'брак' THEN 'Утилизация'
                     WHEN 'отгрузка' THEN 'Упаковка'
                     WHEN 'изделие' THEN 'Сборка'
+                    WHEN 'доработка' THEN 'Доработка'
                     ELSE 'Норма'
                 END,
                 Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,

@@ -1,6 +1,6 @@
 -- return_kit_to_wh: возврат из комплектации на склад по move-строкам.
 -- Вход:
---   type='move', where_from='склад', where_to in ('брак','отгрузка','изделие','комплектация'),
+--   type='move', where_from='склад', where_to in ('брак','отгрузка','изделие','доработка'),
 --   Status_transaction='В ожидании',
 --   Status_warehouse='Комплектация',
 --   Order_wh='Принято на склад'.
@@ -61,7 +61,7 @@ BEGIN
         FROM `Transactions` t
         WHERE t.type = 'move'
           AND t.where_from = 'склад'
-          AND t.where_to IN ('брак', 'отгрузка', 'изделие', 'комплектация')
+          AND t.where_to IN ('брак', 'отгрузка', 'изделие', 'доработка')
           AND t.Status_transaction = 'В ожидании'
           AND t.Status_warehouse = 'Комплектация'
           AND t.Order_wh = 'Принято на склад';
