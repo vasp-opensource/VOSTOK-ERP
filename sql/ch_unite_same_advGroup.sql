@@ -5,7 +5,7 @@
 --
 -- Отбор change: where_from = «внешний», where_to = «склад», Status_warehouse = «Новая», Status_transaction = «В ожидании».
 -- Заменённые строки: Status_transaction = «Заменено», Status_warehouse = «Норма».
--- Новая объединённая строка: те же where_from/where_to, Status_warehouse = «Новая», Status_transaction = «В ожидании».
+-- Новая объединённая строка: те же where_from/where_to, Status_warehouse = «Новая», Status_transaction = «В ожидании»; реквизиты change — MIN / SUM(Quantity_ordered), Order_purch и Order_wh в новой строке — NULL (как ранее). Main не затрагивается.
 
 DELIMITER $$
 
@@ -76,9 +76,12 @@ BEGIN
             Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
             Advanced_group, Address,
-            Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-            Supplier, Location, Source, Initial_doc_no,
-            Order_purch, Order_wh, Order_prod, Order_OTK, Status_warehouse
+            Recommend_purchprod,
+            Order_purch, Order_wh, Order_prod, Order_OTK,
+            Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+            Status_warehouse,
+            Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+            Supplier, Location, Source, Initial_doc_no
         )
         SELECT
             agg.`ERP_ID`,
@@ -116,7 +119,20 @@ BEGIN
             agg.`Length`,
             agg.`Advanced_group`,
             agg.`Address`,
+            agg.`Recommend_purchprod`,
+            NULL,
+            NULL,
+            agg.`Order_prod`,
+            agg.`Order_OTK`,
+            agg.`Order_sv`,
+            agg.`Recommend_wh`,
+            agg.`sum_qty_ord`,
+            agg.`Replace_to`,
+            agg.`Rework_to`,
+            agg.`Rework_from`,
+            'Новая',
             agg.`Document_no`,
+            agg.`Document_date`,
             agg.`Zakaz_no`,
             agg.`Date_needed`,
             agg.`Date_expected`,
@@ -124,12 +140,7 @@ BEGIN
             agg.`Supplier`,
             agg.`Location`,
             agg.`Source`,
-            agg.`Initial_doc_no`,
-            NULL,
-            NULL,
-            agg.`Order_prod`,
-            agg.`Order_OTK`,
-            'Новая'
+            agg.`Initial_doc_no`
         FROM (
             SELECT
                 t.`ERP_ID`,
@@ -158,7 +169,9 @@ BEGIN
                 MIN(t.`Width`) AS `Width`,
                 MIN(t.`Length`) AS `Length`,
                 MIN(t.`Address`) AS `Address`,
+                MIN(t.`Recommend_purchprod`) AS `Recommend_purchprod`,
                 MIN(t.`Document_no`) AS `Document_no`,
+                MIN(t.`Document_date`) AS `Document_date`,
                 MIN(t.`Zakaz_no`) AS `Zakaz_no`,
                 MIN(t.`Date_needed`) AS `Date_needed`,
                 MIN(t.`Date_expected`) AS `Date_expected`,
@@ -168,7 +181,13 @@ BEGIN
                 MIN(t.`Source`) AS `Source`,
                 MIN(t.`Initial_doc_no`) AS `Initial_doc_no`,
                 MIN(t.`Order_prod`) AS `Order_prod`,
-                MIN(t.`Order_OTK`) AS `Order_OTK`
+                MIN(t.`Order_OTK`) AS `Order_OTK`,
+                MIN(t.`Order_sv`) AS `Order_sv`,
+                MIN(t.`Recommend_wh`) AS `Recommend_wh`,
+                SUM(COALESCE(t.`Quantity_ordered`, 0)) AS `sum_qty_ord`,
+                MIN(t.`Replace_to`) AS `Replace_to`,
+                MIN(t.`Rework_to`) AS `Rework_to`,
+                MIN(t.`Rework_from`) AS `Rework_from`
             FROM `Transactions` t
             INNER JOIN tmp_ch_ids x ON x.`id` = t.`id`
             GROUP BY t.`ERP_ID`, t.`Advanced_group`

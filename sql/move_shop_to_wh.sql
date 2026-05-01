@@ -1,6 +1,7 @@
--- move_shop_to_wh: возврат с цеха на склад (move, вернуть на склад / в сборке).
+-- move_shop_to_wh: возврат с цеха на склад (move, вернуть на склад из финальных статусов цеха).
 -- Блокировка: lock_return_shopfloor_to_warehouse
 -- Чтение Main: MAX+COUNT — без NOT FOUND при отсутствии строки (общий handler с курсором).
+-- Меняются только счётчики Main, Status_* и аудит в Transactions; прочие реквизиты строк не трогаем.
 
 DELIMITER $$
 
@@ -24,8 +25,8 @@ BEGIN
           AND t.Status_transaction = 'В ожидании'
           AND t.Order_wh = 'Принято на склад'
           AND t.Order_prod = 'Вернуть на склад'
-          AND t.Status_warehouse = 'В сборке'
-        ORDER BY t.ERP_ID, t.id;
+          AND t.Status_warehouse IN ('Утилизация', 'Сборка', 'Упаковка', 'Доработка')
+        ORDER BY t.id;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
 
@@ -70,16 +71,16 @@ BEGIN
                SET m.Quantity_on_shopfloor = m.Quantity_on_shopfloor - v_qty,
                    m.Quantity_in_warehouse = m.Quantity_in_warehouse + v_qty,
                    m.updated_at              = CURRENT_TIMESTAMP,
-                  m.updated_by              = 'return_shopfloor_to_warehouse'
+                   m.updated_by              = 'return_shopfloor_to_warehouse'
              WHERE m.ERP_ID = v_erp_id;
 
             UPDATE `Transactions` t
                SET t.Status_warehouse   = 'Норма',
                    t.Status_transaction = 'Исполнено',
                    t.updated_at         = CURRENT_TIMESTAMP,
-                  t.updated_by         = CASE
-                                            WHEN t.updated_by IS NULL OR TRIM(COALESCE(t.updated_by, '')) = '' THEN 'return_shopfloor_to_warehouse'
-                                            ELSE CONCAT(t.updated_by, '; ', 'return_shopfloor_to_warehouse')
+                   t.updated_by         = CASE
+                                              WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_shop_to_wh'
+                                              ELSE CONCAT(`updated_by`, '; ', 'move_shop_to_wh')
                                          END
              WHERE t.id = v_tx_id;
         END LOOP;

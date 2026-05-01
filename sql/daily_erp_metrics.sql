@@ -1,4 +1,10 @@
-DROP PROCEDURE IF EXISTS collect_erp_metrics;
+-- collect_erp_metrics: ежедневные агрегаты (performance_log, Import, Transactions, Main) в erp_metrics.
+-- Суммы по Main включают Quantity_of_rework (миграция: alter_erp_metrics_Quantity_of_rework.sql).
+-- phpMyAdmin: выполните весь скрипт целиком (вкладка SQL).
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS collect_erp_metrics$$
 
 CREATE PROCEDURE collect_erp_metrics()
 BEGIN
@@ -20,6 +26,7 @@ BEGIN
     DECLARE v_curr_Quantity_implemented BIGINT DEFAULT 0;
     DECLARE v_curr_Quantity_shipped BIGINT DEFAULT 0;
     DECLARE v_curr_Quantity_of_losses BIGINT DEFAULT 0;
+    DECLARE v_curr_Quantity_of_rework BIGINT DEFAULT 0;
 
     DECLARE v_prev_expect_supply BIGINT DEFAULT 0;
     DECLARE v_prev_inProcess_purchase BIGINT DEFAULT 0;
@@ -30,6 +37,7 @@ BEGIN
     DECLARE v_prev_Quantity_implemented BIGINT DEFAULT 0;
     DECLARE v_prev_Quantity_shipped BIGINT DEFAULT 0;
     DECLARE v_prev_Quantity_of_losses BIGINT DEFAULT 0;
+    DECLARE v_prev_Quantity_of_rework BIGINT DEFAULT 0;
 
     SET v_period_end = NOW(6);
     SET v_period_start = v_period_end - INTERVAL 1 DAY;
@@ -82,7 +90,8 @@ BEGIN
         COALESCE(SUM(COALESCE(m.Quantity_on_shopfloor, 0)), 0),
         COALESCE(SUM(COALESCE(m.Quantity_implemented, 0)), 0),
         COALESCE(SUM(COALESCE(m.Quantity_shipped, 0)), 0),
-        COALESCE(SUM(COALESCE(m.Quantity_of_losses, 0)), 0)
+        COALESCE(SUM(COALESCE(m.Quantity_of_losses, 0)), 0),
+        COALESCE(SUM(COALESCE(m.Quantity_of_rework, 0)), 0)
     INTO
         v_curr_inProcess_purchase,
         v_curr_inProcess_manufacturing,
@@ -91,7 +100,8 @@ BEGIN
         v_curr_Quantity_on_shopfloor,
         v_curr_Quantity_implemented,
         v_curr_Quantity_shipped,
-        v_curr_Quantity_of_losses
+        v_curr_Quantity_of_losses,
+        v_curr_Quantity_of_rework
     FROM `Main` m;
 
     /* Снимки прошлого периода (последняя сохраненная запись) */
@@ -104,7 +114,8 @@ BEGIN
         COALESCE(d.snapshot_Quantity_on_shopfloor, 0),
         COALESCE(d.snapshot_Quantity_implemented, 0),
         COALESCE(d.snapshot_Quantity_shipped, 0),
-        COALESCE(d.snapshot_Quantity_of_losses, 0)
+        COALESCE(d.snapshot_Quantity_of_losses, 0),
+        COALESCE(d.snapshot_Quantity_of_rework, 0)
     INTO
         v_prev_expect_supply,
         v_prev_inProcess_purchase,
@@ -114,7 +125,8 @@ BEGIN
         v_prev_Quantity_on_shopfloor,
         v_prev_Quantity_implemented,
         v_prev_Quantity_shipped,
-        v_prev_Quantity_of_losses
+        v_prev_Quantity_of_losses,
+        v_prev_Quantity_of_rework
     FROM erp_metrics d
     WHERE d.period_date < v_period_date
     ORDER BY d.period_date DESC
@@ -137,6 +149,7 @@ BEGIN
         Quantity_implemented_change,
         Quantity_shipped_change,
         Quantity_of_losses_change,
+        Quantity_of_rework_change,
         snapshot_expect_supply,
         snapshot_inProcess_purchase,
         snapshot_inProcess_manufacturing,
@@ -145,7 +158,8 @@ BEGIN
         snapshot_Quantity_on_shopfloor,
         snapshot_Quantity_implemented,
         snapshot_Quantity_shipped,
-        snapshot_Quantity_of_losses
+        snapshot_Quantity_of_losses,
+        snapshot_Quantity_of_rework
     )
     VALUES (
         v_period_start,
@@ -164,6 +178,7 @@ BEGIN
         v_curr_Quantity_implemented - v_prev_Quantity_implemented,
         v_curr_Quantity_shipped - v_prev_Quantity_shipped,
         v_curr_Quantity_of_losses - v_prev_Quantity_of_losses,
+        v_curr_Quantity_of_rework - v_prev_Quantity_of_rework,
         v_curr_expect_supply,
         v_curr_inProcess_purchase,
         v_curr_inProcess_manufacturing,
@@ -172,7 +187,8 @@ BEGIN
         v_curr_Quantity_on_shopfloor,
         v_curr_Quantity_implemented,
         v_curr_Quantity_shipped,
-        v_curr_Quantity_of_losses
+        v_curr_Quantity_of_losses,
+        v_curr_Quantity_of_rework
     )
     ON DUPLICATE KEY UPDATE
         period_start = VALUES(period_start),
@@ -190,6 +206,7 @@ BEGIN
         Quantity_implemented_change = VALUES(Quantity_implemented_change),
         Quantity_shipped_change = VALUES(Quantity_shipped_change),
         Quantity_of_losses_change = VALUES(Quantity_of_losses_change),
+        Quantity_of_rework_change = VALUES(Quantity_of_rework_change),
         snapshot_expect_supply = VALUES(snapshot_expect_supply),
         snapshot_inProcess_purchase = VALUES(snapshot_inProcess_purchase),
         snapshot_inProcess_manufacturing = VALUES(snapshot_inProcess_manufacturing),
@@ -198,5 +215,8 @@ BEGIN
         snapshot_Quantity_on_shopfloor = VALUES(snapshot_Quantity_on_shopfloor),
         snapshot_Quantity_implemented = VALUES(snapshot_Quantity_implemented),
         snapshot_Quantity_shipped = VALUES(snapshot_Quantity_shipped),
-        snapshot_Quantity_of_losses = VALUES(snapshot_Quantity_of_losses);
-END;
+        snapshot_Quantity_of_losses = VALUES(snapshot_Quantity_of_losses),
+        snapshot_Quantity_of_rework = VALUES(snapshot_Quantity_of_rework);
+END$$
+
+DELIMITER ;

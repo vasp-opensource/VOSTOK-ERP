@@ -1,11 +1,15 @@
 -- deficit_wh: упрощенная обработка move со склада
+-- Новые реквизиты Transactions (Recommend_purchprod, Order_sv, Document_date, …) копируются из закрываемой строки
+--   во все вставляемые move, как в ch_merge / deficit_supply.
 -- Вход:
 --   type='move',
 --   where_from='склад',
 --   where_to in ('брак','отгрузка','изделие'),
 --   Status_transaction='В ожидании',
---   Status_warehouse='Новая'
+--   Status_warehouse in ('Новая', 'Дефицит склада')
 --
+-- Ожидаемые закупка/производство: Main.inProcess_purchase / inProcess_manufacturing (как в эталонной логике),
+--   не сумма по Transactions.
 -- Логика:
 -- 1) Родительская строка всегда закрывается (Status_transaction='Заменено').
 -- 2) Если складского количества хватает: создается дочерний move со статусом комплектации,
@@ -55,7 +59,7 @@ BEGIN
           AND t.where_from = 'склад'
           AND t.where_to IN ('брак', 'отгрузка', 'изделие')
           AND t.Status_transaction = 'В ожидании'
-          AND t.Status_warehouse = 'Новая'
+          AND t.Status_warehouse IN ('Новая', 'Дефицит склада')
         ORDER BY
             t.ERP_ID,
             CASE t.where_to
@@ -139,25 +143,19 @@ BEGIN
                 LIMIT 1
             ), 0);
 
-            SELECT COALESCE(SUM(COALESCE(t.Quantity_change, 0)), 0)
-              INTO v_expect_purch
-            FROM `Transactions` t
-            WHERE t.ERP_ID = v_erp_id
-              AND t.type = 'change'
-              AND t.where_from = 'внешний'
-              AND t.where_to = 'склад'
-              AND t.Status_transaction = 'В ожидании'
-              AND t.Status_warehouse = 'В закупке';
+            SET v_expect_purch = COALESCE((
+                SELECT m.inProcess_purchase
+                FROM `Main` m
+                WHERE m.ERP_ID = v_erp_id
+                LIMIT 1
+            ), 0);
 
-            SELECT COALESCE(SUM(COALESCE(t.Quantity_change, 0)), 0)
-              INTO v_expect_prod
-            FROM `Transactions` t
-            WHERE t.ERP_ID = v_erp_id
-              AND t.type = 'change'
-              AND t.where_from = 'внешний'
-              AND t.where_to = 'склад'
-              AND t.Status_transaction = 'В ожидании'
-              AND t.Status_warehouse = 'В изготовлении';
+            SET v_expect_prod = COALESCE((
+                SELECT m.inProcess_manufacturing
+                FROM `Main` m
+                WHERE m.ERP_ID = v_erp_id
+                LIMIT 1
+            ), 0);
 
             SELECT COALESCE(SUM(COALESCE(t.Quantity_change, 0)), 0)
               INTO v_wait_supply
@@ -213,9 +211,15 @@ BEGIN
 
             UPDATE `Transactions`
                SET Status_transaction = 'Заменено',
-                   linked_transaction = v_tx_id,
+                   linked_transaction   = CASE
+                       WHEN `linked_transaction` IS NULL OR TRIM(COALESCE(`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                       ELSE CONCAT(TRIM(`linked_transaction`), '; ', v_tx_id)
+                   END,
                    Status_warehouse   = 'Норма',
-                   updated_by         = 'deficit_wh',
+                   updated_by         = CASE
+                                            WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'deficit_wh'
+                                            ELSE CONCAT(`updated_by`, '; ', 'deficit_wh')
+                                        END,
                    updated_at         = CURRENT_TIMESTAMP
              WHERE id = v_tx_id;
 
@@ -228,18 +232,31 @@ BEGIN
                         Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
                         For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
                         Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-                        Height, Width, Length, Advanced_group, Address, Order_purch, Order_wh, Order_prod, Order_OTK,
-                        Status_warehouse, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+                        Height, Width, Length, Advanced_group, Address,
+                        Recommend_purchprod,
+                        Order_purch, Order_wh, Order_prod, Order_OTK,
+                        Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                        Status_warehouse,
+                        Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                        Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh',
+                    CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                    END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, 'В ожидании',
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
                         t.For_supplied_as_assembly_components_provided_by_supplier, t.Part_material, t.Producer, t.Catalogue_number,
                         t.Producer_article, t.Distributer, t.Distributer_article, t.MBOM_type, t.Mass_kg, t.Unit_of_measure,
-                        t.Height, t.Width, t.Length, t.Advanced_group, t.Address, t.Order_purch, 'В комплектации', t.Order_prod, t.Order_OTK,
-                        v_status_wh_kitting, t.Document_no, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub
+                        t.Height, t.Width, t.Length, t.Advanced_group, t.Address,
+                        t.Recommend_purchprod,
+                        t.Order_purch, 'В комплектации', t.Order_prod, t.Order_OTK,
+                        t.Order_sv, t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
+                        v_status_wh_kitting, t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+                        t.Supplier, t.Location, t.Source, t.Initial_doc_no
                     FROM `Transactions` t
                     WHERE t.id = v_tx_id;
 
@@ -257,18 +274,31 @@ BEGIN
                         Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
                         For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
                         Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-                        Height, Width, Length, Advanced_group, Address, Order_purch, Order_wh, Order_prod, Order_OTK,
-                        Status_warehouse, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+                        Height, Width, Length, Advanced_group, Address,
+                        Recommend_purchprod,
+                        Order_purch, Order_wh, Order_prod, Order_OTK,
+                        Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                        Status_warehouse,
+                        Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                        Supplier, Location, Source, Initial_doc_no
                     )
                     SELECT
-                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh', v_tx_id,
+                        t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh',
+                    CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                    END,
                         'move', t.where_from, t.where_to, v_req_qty, 0, v_status_tx_new,
                         t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                         t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
                         t.For_supplied_as_assembly_components_provided_by_supplier, t.Part_material, t.Producer, t.Catalogue_number,
                         t.Producer_article, t.Distributer, t.Distributer_article, t.MBOM_type, t.Mass_kg, t.Unit_of_measure,
-                        t.Height, t.Width, t.Length, t.Advanced_group, t.Address, t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
-                        v_status_wh_deficit, t.Document_no, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub
+                        t.Height, t.Width, t.Length, t.Advanced_group, t.Address,
+                        t.Recommend_purchprod,
+                        t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
+                        t.Order_sv, t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
+                        v_status_wh_deficit, t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+                        t.Supplier, t.Location, t.Source, t.Initial_doc_no
                     FROM `Transactions` t
                     WHERE t.id = v_tx_id;
 
@@ -287,18 +317,31 @@ BEGIN
                             Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
                             For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
                             Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-                            Height, Width, Length, Advanced_group, Address, Order_purch, Order_wh, Order_prod, Order_OTK,
-                            Status_warehouse, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+                            Height, Width, Length, Advanced_group, Address,
+                            Recommend_purchprod,
+                            Order_purch, Order_wh, Order_prod, Order_OTK,
+                            Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                            Status_warehouse,
+                            Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                            Supplier, Location, Source, Initial_doc_no
                         )
                         SELECT
-                            t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh', v_tx_id,
+                            t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh',
+                    CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                    END,
                             'move', t.where_from, t.where_to, v_part_stock, 0, 'В ожидании',
                             t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                             t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
                             t.For_supplied_as_assembly_components_provided_by_supplier, t.Part_material, t.Producer, t.Catalogue_number,
                             t.Producer_article, t.Distributer, t.Distributer_article, t.MBOM_type, t.Mass_kg, t.Unit_of_measure,
-                            t.Height, t.Width, t.Length, t.Advanced_group, t.Address, t.Order_purch, 'В комплектации', t.Order_prod, t.Order_OTK,
-                            v_status_wh_kitting, t.Document_no, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub
+                            t.Height, t.Width, t.Length, t.Advanced_group, t.Address,
+                            t.Recommend_purchprod,
+                            t.Order_purch, 'В комплектации', t.Order_prod, t.Order_OTK,
+                            t.Order_sv, t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
+                            v_status_wh_kitting, t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+                            t.Supplier, t.Location, t.Source, t.Initial_doc_no
                         FROM `Transactions` t
                         WHERE t.id = v_tx_id;
 
@@ -318,18 +361,31 @@ BEGIN
                             Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
                             For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
                             Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-                            Height, Width, Length, Advanced_group, Address, Order_purch, Order_wh, Order_prod, Order_OTK,
-                            Status_warehouse, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+                            Height, Width, Length, Advanced_group, Address,
+                            Recommend_purchprod,
+                            Order_purch, Order_wh, Order_prod, Order_OTK,
+                            Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                            Status_warehouse,
+                            Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                            Supplier, Location, Source, Initial_doc_no
                         )
                         SELECT
-                            t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh', v_tx_id,
+                            t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'deficit_wh', 'deficit_wh',
+                    CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_tx_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_tx_id)
+                    END,
                             'move', t.where_from, t.where_to, v_part_rest, 0, v_status_tx_new,
                             t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
                             t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly, t.Component_type,
                             t.For_supplied_as_assembly_components_provided_by_supplier, t.Part_material, t.Producer, t.Catalogue_number,
                             t.Producer_article, t.Distributer, t.Distributer_article, t.MBOM_type, t.Mass_kg, t.Unit_of_measure,
-                            t.Height, t.Width, t.Length, t.Advanced_group, t.Address, t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
-                            v_status_wh_deficit, t.Document_no, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub
+                            t.Height, t.Width, t.Length, t.Advanced_group, t.Address,
+                            t.Recommend_purchprod,
+                            t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
+                            t.Order_sv, t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
+                            v_status_wh_deficit, t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+                            t.Supplier, t.Location, t.Source, t.Initial_doc_no
                         FROM `Transactions` t
                         WHERE t.id = v_tx_id;
 

@@ -1,6 +1,11 @@
 -- ch_outside_to_ownProd: внешний → склад (собственное производство). Только отбор в tmp_ch_outside_unite_ids; объединение и Main — ch_outside_unite.
--- Критерии: Order_purch «Собственное производство», Order_prod «Принято в изготовление»; партнёр — «В изготовлении», «В ожидании» (не merge-строки процедуры).
+-- Критерии: Order_prod «Принято в изготовление» и либо Order_purch «Собственное производство»,
+-- либо Recommend_purchprod «В собственное производство»/«Уточнить ревизию в изготовлении»;
+-- партнёр — «В изготовлении», «В ожидании» (не merge-строки процедуры).
+-- Перед ch_outside_unite передаёт в recommend_change_unite_clear только текущие входящие строки;
+-- смежные строки для снятия Recommend_purchprod ищет сама recommend_change_unite_clear.
 -- Перед использованием выполните ch_outside_unite.sql (процедура ch_outside_unite).
+-- Суммарные INSERT в Transactions и нулевой по умолчанию Main.Quantity_of_rework задаются в ch_outside_unite (см. колонки как в ch_merge_same_advGroup).
 
 DELIMITER $$
 
@@ -28,7 +33,10 @@ BEGIN
     FROM `Transactions` t
     WHERE t.Status_warehouse IN ('Новая', 'Дефицит закупки')
       AND t.Status_transaction = 'В ожидании'
-      AND t.Order_purch = 'Собственное производство'
+      AND (
+          t.Order_purch = 'Собственное производство'
+          OR t.Recommend_purchprod IN ('В собственное производство', 'Уточнить ревизию в изготовлении')
+      )
       AND t.Order_prod = 'Принято в изготовление'
       AND t.type = 'change'
       AND t.where_from = 'внешний'
@@ -76,6 +84,19 @@ BEGIN
     SELECT DISTINCT ERP_ID
     FROM tmp_ch_outside_unite_ids;
 
+    /* Передаём только текущие входящие строки. Смежные строки clear-процедура найдёт сама. */
+    DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+    CREATE TEMPORARY TABLE tmp_recommend_change_unite_clear_ids (
+        id INT UNSIGNED NOT NULL PRIMARY KEY
+    );
+
+    INSERT INTO tmp_recommend_change_unite_clear_ids (id)
+    SELECT id
+    FROM tmp_ch_outside_unite_ids
+    WHERE is_incoming = 1;
+
+    CALL recommend_change_unite_clear('ch_outside_to_ownProd');
+
     CALL ch_outside_unite(
         'lock_process_ownprod_change_to_main',
         'Собственное производство',
@@ -100,6 +121,7 @@ BEGIN
       AND t.`Status_transaction` = 'В ожидании'
       AND t.`Status_warehouse` = 'Ожидание поставки';
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
 END$$
 

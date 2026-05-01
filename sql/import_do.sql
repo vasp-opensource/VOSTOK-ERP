@@ -1,14 +1,24 @@
 DROP PROCEDURE IF EXISTS import_do;
 
+-- import_do: сценарии Order_import / Suggestion, клоны строк в Import, финальная вставка в Transactions.
+-- Вставка в Transactions: полный набор реквизитов, как в ch_merge / deficit_*; в Import нет
+--   Recommend_purchprod, Order_*, Order_sv, Rework_*, Document_date — в SELECT даются NULL/0.
+--   Supplier, Location, Source, Initial_doc_no — из Import (см. create_table_Import / миграции БД).
+--   linked_transaction при вставке в Transactions — NULL (цепочка из Import не копируется).
+--   Status_warehouse при импорте в Transactions — «Новая» (не из Import).
+
 DELIMITER $$
 
 CREATE PROCEDURE import_do()
 BEGIN
     DECLARE v_lock_ok INT DEFAULT 0;
+    DECLARE v_first_transaction_id BIGINT DEFAULT 0;
+    DECLARE v_inserted_transactions_count BIGINT DEFAULT 0;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
         IF v_lock_ok = 1 THEN
             DO RELEASE_LOCK('lock_process_import_do');
         END IF;
@@ -100,6 +110,7 @@ BEGIN
             Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
             Quantity_in_target_assembly, Quantity_of_target_assemblies, Component_type,
             For_supplied_as_assembly_components_provided_by_supplier, Components_quantity_in_assembly,
+            Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
@@ -116,6 +127,7 @@ BEGIN
             p.Project, p.Target_assembly, p.Supplied_component_number, p.Component_revision, p.Component_name,
             p.Quantity_in_target_assembly, p.Quantity_of_target_assemblies, p.Component_type,
             p.For_supplied_as_assembly_components_provided_by_supplier, p.Components_quantity_in_assembly,
+            p.Assembly_batch_id, p.Assembly_batch_name, p.Assembly_batch_status, p.Assembly_batch_priority,
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
@@ -129,7 +141,10 @@ BEGIN
             i.Suggestion = 'Импортировать',
             i.Order_import = 'Ожидание',
             i.Status_import = 'Новая',
-            i.linked_transaction = i.id,
+            i.linked_transaction   = CASE
+                WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
+                ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
+            END,
             i.updated_at = CURRENT_TIMESTAMP
         WHERE i.Status_import = 'Новая';
 
@@ -158,7 +173,10 @@ BEGIN
         INNER JOIN tmp_import_do_replace_change rc ON rc.parent_id = i.id
         SET
             i.Status_import = 'Отменено',
-            i.linked_transaction = i.id,
+            i.linked_transaction   = CASE
+                WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
+                ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
+            END,
             i.updated_at = CURRENT_TIMESTAMP;
 
         /* Первая новая: qty = -1 * (sure + maybe), Suggestion='Импортировать' */
@@ -173,13 +191,18 @@ BEGIN
             Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
             Quantity_in_target_assembly, Quantity_of_target_assemblies, Component_type,
             For_supplied_as_assembly_components_provided_by_supplier, Components_quantity_in_assembly,
+            Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
             Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
-            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', rc.parent_id,
+            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            CASE
+                WHEN p.`linked_transaction` IS NULL OR TRIM(COALESCE(p.`linked_transaction`, '')) = '' THEN CAST(rc.parent_id AS CHAR)
+                ELSE CONCAT(TRIM(p.`linked_transaction`), '; ', rc.parent_id)
+            END,
             p.type, p.where_from, p.where_to, p.Quantity_of_parts_total, -1 * rc.can_total,
             p.Quantity_in_transactions, p.inProcess_purchase, p.inProcess_manufacturing,
             p.Quantity_in_warehouse, p.Quantity_in_kitting, p.Quantity_on_shopfloor,
@@ -189,6 +212,7 @@ BEGIN
             p.Project, p.Target_assembly, p.Supplied_component_number, p.Component_revision, p.Component_name,
             p.Quantity_in_target_assembly, p.Quantity_of_target_assemblies, p.Component_type,
             p.For_supplied_as_assembly_components_provided_by_supplier, p.Components_quantity_in_assembly,
+            p.Assembly_batch_id, p.Assembly_batch_name, p.Assembly_batch_status, p.Assembly_batch_priority,
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
@@ -208,13 +232,18 @@ BEGIN
             Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
             Quantity_in_target_assembly, Quantity_of_target_assemblies, Component_type,
             For_supplied_as_assembly_components_provided_by_supplier, Components_quantity_in_assembly,
+            Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
             Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
-            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', rc.parent_id,
+            p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            CASE
+                WHEN p.`linked_transaction` IS NULL OR TRIM(COALESCE(p.`linked_transaction`, '')) = '' THEN CAST(rc.parent_id AS CHAR)
+                ELSE CONCAT(TRIM(p.`linked_transaction`), '; ', rc.parent_id)
+            END,
             p.type, p.where_from, p.where_to, p.Quantity_of_parts_total, (rc.parent_qty + rc.can_total),
             p.Quantity_in_transactions, p.inProcess_purchase, p.inProcess_manufacturing,
             p.Quantity_in_warehouse, p.Quantity_in_kitting, p.Quantity_on_shopfloor,
@@ -224,6 +253,7 @@ BEGIN
             p.Project, p.Target_assembly, p.Supplied_component_number, p.Component_revision, p.Component_name,
             p.Quantity_in_target_assembly, p.Quantity_of_target_assemblies, p.Component_type,
             p.For_supplied_as_assembly_components_provided_by_supplier, p.Components_quantity_in_assembly,
+            p.Assembly_batch_id, p.Assembly_batch_name, p.Assembly_batch_status, p.Assembly_batch_priority,
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
@@ -248,25 +278,59 @@ BEGIN
           AND i.Suggestion = 'Импортировать'
           AND i.Order_import = 'Выполнить';
 
+        /* Копия в Transactions: linked_transaction не переносим; Status_warehouse = «Новая». */
         INSERT INTO `Transactions` (
             ERP_ID, created_at, updated_at, created_by, updated_by, linked_transaction,
             type, where_from, where_to, Quantity_of_parts_total, Quantity_change, Status_transaction,
             Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
-            Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly, Component_type,
+            Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly,
+            Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
+            Component_type,
             For_supplied_as_assembly_components_provided_by_supplier, Part_material, Producer, Catalogue_number,
             Producer_article, Distributer, Distributer_article, MBOM_type, Mass_kg, Unit_of_measure,
-            Height, Width, Length, Advanced_group, Address, Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub
+            Height, Width, Length, Advanced_group, Address,
+            Recommend_purchprod,
+            Order_purch, Order_wh, Order_prod, Order_OTK,
+            Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+            Status_warehouse,
+            Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+            Supplier, Location, Source, Initial_doc_no
         )
         SELECT
-            i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', i.linked_transaction,
+            i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
+            NULL,
             i.type, i.where_from, i.where_to, COALESCE(i.Quantity_of_parts_total, 0), COALESCE(i.Quantity_change, 0), 'В ожидании',
             i.Project, i.Target_assembly, i.Supplied_component_number, i.Component_revision, i.Component_name,
-            COALESCE(i.Quantity_in_target_assembly, 0), COALESCE(i.Quantity_of_target_assemblies, 0), COALESCE(i.Components_quantity_in_assembly, 0), i.Component_type,
+            COALESCE(i.Quantity_in_target_assembly, 0), COALESCE(i.Quantity_of_target_assemblies, 0), COALESCE(i.Components_quantity_in_assembly, 0),
+            i.Assembly_batch_id, i.Assembly_batch_name, i.Assembly_batch_status, i.Assembly_batch_priority,
+            i.Component_type,
             i.For_supplied_as_assembly_components_provided_by_supplier, i.Part_material, i.Producer, i.Catalogue_number,
             i.Producer_article, i.Distributer, i.Distributer_article, i.MBOM_type, i.Mass_kg, i.Unit_of_measure,
-            i.Height, i.Width, i.Length, i.Advanced_group, i.Address, i.Document_no, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub
+            i.Height, i.Width, i.Length, i.Advanced_group, i.Address,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
+            'Новая',
+            i.Document_no, NULL, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub,
+            i.Supplier, i.Location, i.Source, i.Initial_doc_no
         FROM `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id;
+
+        SET v_inserted_transactions_count = ROW_COUNT();
+        SET v_first_transaction_id = LAST_INSERT_ID();
+
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+        CREATE TEMPORARY TABLE tmp_recommend_change_unite_clear_ids (
+            id INT UNSIGNED NOT NULL PRIMARY KEY
+        );
+
+        IF v_inserted_transactions_count > 0 THEN
+            INSERT INTO tmp_recommend_change_unite_clear_ids (id)
+            SELECT t.id
+            FROM `Transactions` t
+            WHERE t.id >= v_first_transaction_id
+              AND t.id < (v_first_transaction_id + v_inserted_transactions_count);
+
+            CALL recommend_change_unite_clear('import_do');
+        END IF;
 
         UPDATE `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
@@ -274,6 +338,7 @@ BEGIN
             i.Status_import = 'Импортировано',
             i.updated_at = CURRENT_TIMESTAMP;
 
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_to_transactions;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_initial_ids;
 

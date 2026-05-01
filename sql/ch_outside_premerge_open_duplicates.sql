@@ -2,7 +2,7 @@
 -- с одинаковым ERP_ID + Advanced_group (после нормализации TRIM), уже в статусе учёта закупки/изготовления,
 -- когда нет входящих строк «Новая»/«Дефицит закупки» — иначе ch_outside_unite их не видит.
 -- Вызывать в начале ch_outside_to_purch / ch_outside_to_ownProd (до заполнения tmp_ch_outside_unite_ids).
--- Main не трогаем: сумма по группе не меняется.
+-- Main не трогаем: сумма по группе не меняется. Новые реквизиты Transactions в суммарной строке — MIN / SUM(Quantity_ordered), как в ch_merge_same_advGroup.
 -- Параметр p_kind: 'purch' | 'ownprod'.
 --
 -- Отбор смягчён относительно первой версии:
@@ -170,13 +170,17 @@ BEGIN
                     Quantity_of_parts_total, Quantity_change, Status_transaction,
                     Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
                     Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly,
+                    Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
                     Component_type, For_supplied_as_assembly_components_provided_by_supplier, Part_material,
                     Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                     MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                     Advanced_group, Address,
-                    Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                    Recommend_purchprod,
+                    Order_purch, Order_wh, Order_prod, Order_OTK,
+                    Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                    Status_warehouse,
+                    Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
                     Supplier, Location, Source, Initial_doc_no,
-                    Order_purch, Order_wh, Order_prod, Order_OTK, Status_warehouse,
                     created_by, updated_by, created_at, updated_at
                 )
                 SELECT
@@ -190,17 +194,27 @@ BEGIN
                     CASE WHEN g.`sum_qty` <= 0 THEN 'Отменено' ELSE 'В ожидании' END,
                     fld.`Project`, fld.`Target_assembly`, fld.`Supplied_component_number`, fld.`Component_revision`, fld.`Component_name`,
                     fld.`Quantity_in_target_assembly`, fld.`Quantity_of_target_assemblies`, fld.`Components_quantity_in_assembly`,
+                    fld.`Assembly_batch_id`, fld.`Assembly_batch_name`, fld.`Assembly_batch_status`, fld.`Assembly_batch_priority`,
                     fld.`Component_type`, fld.`For_supplied_as_assembly_components_provided_by_supplier`, fld.`Part_material`,
                     fld.`Producer`, fld.`Catalogue_number`, fld.`Producer_article`, fld.`Distributer`, fld.`Distributer_article`,
                     fld.`MBOM_type`, fld.`Mass_kg`, fld.`Unit_of_measure`, fld.`Height`, fld.`Width`, fld.`Length`,
                     fld.`Advanced_group`, fld.`Address`,
-                    fld.`Document_no`, fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
-                    fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
+                    fld.`Recommend_purchprod`,
                     fld.`Order_purch`,
                     NULL,
                     fld.`Order_prod`,
                     fld.`Order_OTK`,
+                    fld.`Order_sv`,
+                    fld.`Recommend_wh`,
+                    fld.`sum_qty_ord`,
+                    fld.`Replace_to`,
+                    fld.`Rework_to`,
+                    fld.`Rework_from`,
                     CASE WHEN g.`sum_qty` <= 0 THEN 'Норма' ELSE v_wh_merge END,
+                    fld.`Document_no`,
+                    fld.`Document_date`,
+                    fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
+                    fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
                     v_proc,
                     v_proc,
                     NOW(),
@@ -218,6 +232,10 @@ BEGIN
                         MIN(t.`Quantity_in_target_assembly`) AS `Quantity_in_target_assembly`,
                         MIN(t.`Quantity_of_target_assemblies`) AS `Quantity_of_target_assemblies`,
                         MIN(t.`Components_quantity_in_assembly`) AS `Components_quantity_in_assembly`,
+                        MIN(t.`Assembly_batch_id`) AS `Assembly_batch_id`,
+                        MIN(t.`Assembly_batch_name`) AS `Assembly_batch_name`,
+                        MIN(t.`Assembly_batch_status`) AS `Assembly_batch_status`,
+                        MIN(t.`Assembly_batch_priority`) AS `Assembly_batch_priority`,
                         MIN(t.`Component_type`) AS `Component_type`,
                         MIN(t.`For_supplied_as_assembly_components_provided_by_supplier`) AS `For_supplied_as_assembly_components_provided_by_supplier`,
                         MIN(t.`Part_material`) AS `Part_material`,
@@ -234,7 +252,9 @@ BEGIN
                         MIN(t.`Length`) AS `Length`,
                         MIN(t.`Advanced_group`) AS `Advanced_group`,
                         MIN(t.`Address`) AS `Address`,
+                        MIN(t.`Recommend_purchprod`) AS `Recommend_purchprod`,
                         MIN(t.`Document_no`) AS `Document_no`,
+                        MIN(t.`Document_date`) AS `Document_date`,
                         MIN(t.`Zakaz_no`) AS `Zakaz_no`,
                         MIN(t.`Date_needed`) AS `Date_needed`,
                         MIN(t.`Date_expected`) AS `Date_expected`,
@@ -245,7 +265,13 @@ BEGIN
                         MIN(t.`Initial_doc_no`) AS `Initial_doc_no`,
                         MIN(t.`Order_purch`) AS `Order_purch`,
                         MIN(t.`Order_prod`) AS `Order_prod`,
-                        MIN(t.`Order_OTK`) AS `Order_OTK`
+                        MIN(t.`Order_OTK`) AS `Order_OTK`,
+                        MIN(t.`Order_sv`) AS `Order_sv`,
+                        MIN(t.`Recommend_wh`) AS `Recommend_wh`,
+                        SUM(COALESCE(t.`Quantity_ordered`, 0)) AS `sum_qty_ord`,
+                        MIN(t.`Replace_to`) AS `Replace_to`,
+                        MIN(t.`Rework_to`) AS `Rework_to`,
+                        MIN(t.`Rework_from`) AS `Rework_from`
                     FROM `Transactions` t
                     INNER JOIN tmp_ch_premerge_ids x ON x.`id` = t.`id`
                     GROUP BY t.`ERP_ID`, COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '')
@@ -260,7 +286,10 @@ BEGIN
 
                 UPDATE `Transactions` t
                 SET
-                    t.`linked_transaction` = v_new_id,
+                    t.`linked_transaction` = CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                    END,
                     t.`Source`             = v_source,
                     t.`updated_at`         = NOW(),
                     t.`updated_by`         = CASE
@@ -275,7 +304,10 @@ BEGIN
                   ON g.`ERP_ID` = x.`ERP_ID`
                  AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
                 SET
-                    t.`linked_transaction` = v_new_id,
+                    t.`linked_transaction` = CASE
+                        WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                        ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                    END,
                     t.`created_by`         = v_proc,
                     t.`Status_transaction` = 'Заменено',
                     t.`Status_warehouse` = 'Норма',

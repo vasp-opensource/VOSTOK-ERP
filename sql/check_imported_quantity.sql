@@ -1,15 +1,24 @@
+-- check_imported_quantity: самостоятельная проверка согласованности Import и Transactions; нарушения пишутся в integrity_check_log.
+-- Сверка: агрегаты по change (Status_transaction, created_by) vs SUM(Quantity_change) по Import при Status_import=«Импортировано».
+-- Используются только количество и перечисленные статусы/метки; строки Transactions, созданные create_row, не участвуют.
+-- Поля Main и новые реквизиты Transactions (документы, Order_*, Rework_*, …) в расчёте не участвуют.
+
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS check_imported_quantity$$
 
 CREATE PROCEDURE check_imported_quantity()
 BEGIN
-    /* Важно: процедура рассчитана на запуск ИЗ check_data_integrity,
-       где уже создана tmp_integrity_candidates(procedure_name, ERP_ID, error_message). */
+    DROP TEMPORARY TABLE IF EXISTS `tmp_import_integrity_candidates`;
+    CREATE TEMPORARY TABLE `tmp_import_integrity_candidates` (
+        `procedure_name` VARCHAR(255) NOT NULL,
+        `ERP_ID` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
+        `error_message` TEXT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    INSERT INTO `tmp_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
+    INSERT INTO `tmp_import_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
     SELECT
-        'check_data_integrity',
+        'check_imported_quantity',
         b.`ERP_ID`,
         CONCAT(
             'Transactions vs Import (change): ERP_ID=', b.`ERP_ID`,
@@ -27,6 +36,7 @@ BEGIN
         SELECT (`ERP_ID` COLLATE utf8mb4_unicode_ci) AS `ERP_ID`
         FROM `Transactions`
         WHERE `type` = 'change'
+          AND COALESCE(`created_by`, '') <> 'create_row'
         UNION
         SELECT (`ERP_ID` COLLATE utf8mb4_unicode_ci) AS `ERP_ID`
         FROM `Import`
@@ -39,21 +49,23 @@ BEGIN
         FROM `Transactions`
         WHERE `type` = 'change'
           AND `Status_transaction` IN ('В ожидании', 'Исполнено')
+          AND COALESCE(`created_by`, '') <> 'create_row'
         GROUP BY `ERP_ID`
-    ) twe ON twe.`ERP_ID` = b.`ERP_ID`
+    ) twe ON twe.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
             SUM(ABS(COALESCE(`Quantity_change`, 0))) AS sum_replaced_abs
         FROM `Transactions`
         WHERE `type` = 'change'
-          AND `Status_transaction` = 'Заменено'
+          AND `Status_transaction` IN ('Заменено', 'Заменен ID')
+          AND COALESCE(`created_by`, '') <> 'create_row'
           AND (
                `created_by` IS NULL
             OR `created_by` <> 'deficit_supply'
           )
         GROUP BY `ERP_ID`
-    ) tr ON tr.`ERP_ID` = b.`ERP_ID`
+    ) tr ON tr.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -62,8 +74,9 @@ BEGIN
         WHERE `type` = 'change'
           AND `Status_transaction` IN ('В ожидании', 'Исполнено', 'Заменено')
           AND `created_by` = 'deficit_supply'
+          AND COALESCE(`created_by`, '') <> 'create_row'
         GROUP BY `ERP_ID`
-    ) tds ON tds.`ERP_ID` = b.`ERP_ID`
+    ) tds ON tds.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -71,8 +84,9 @@ BEGIN
         FROM `Transactions`
         WHERE `type` = 'change'
           AND `Status_transaction` = 'Отменено'
+          AND COALESCE(`created_by`, '') <> 'create_row'
         GROUP BY `ERP_ID`
-    ) tc ON tc.`ERP_ID` = b.`ERP_ID`
+    ) tc ON tc.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (
         SELECT
             `ERP_ID`,
@@ -80,12 +94,28 @@ BEGIN
         FROM `Import`
         WHERE `Status_import` = 'Импортировано'
         GROUP BY `ERP_ID`
-    ) i ON i.`ERP_ID` = b.`ERP_ID`
+    ) i ON i.`ERP_ID` COLLATE utf8mb4_unicode_ci = b.`ERP_ID` COLLATE utf8mb4_unicode_ci
     WHERE (
             COALESCE(twe.sum_wait_exec, 0)
             - COALESCE(tds.sum_deficit_supply, 0)
             - COALESCE(tc.sum_cancelled_abs, 0)
           ) <> COALESCE(i.sum_imported, 0);
+
+    INSERT INTO `integrity_check_log` (`procedure_name`, `ERP_ID`, `error_message`)
+    SELECT DISTINCT
+        c.`procedure_name`,
+        c.`ERP_ID`,
+        c.`error_message`
+    FROM `tmp_import_integrity_candidates` c
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM `integrity_check_log` l
+        WHERE l.`procedure_name` = c.`procedure_name`
+          AND (l.`ERP_ID` <=> c.`ERP_ID`)
+          AND l.`error_message` = (c.`error_message` COLLATE utf8mb4_unicode_ci)
+    );
+
+    DROP TEMPORARY TABLE IF EXISTS `tmp_import_integrity_candidates`;
 END$$
 
 DELIMITER ;

@@ -1,4 +1,6 @@
 -- ch_outside_unite: общая логика неттинга change (внешний→склад), Main, merge по группам ERP_ID + Advanced_group.
+-- Перед любыми изменениями Transactions по tmp_ch_outside_unite_ids: recommend_change_unite_clear (recommend_change_unite_clear.sql)
+-- сбрасывает Recommend_purchprod.
 -- Вызывается после заполнения tmp_ch_outside_unite_ids (входящие + партнёры) в ch_outside_to_purch / ch_outside_to_ownProd.
 -- Параметры: блокировка, Source, метка процедуры (created_by/updated_by, исключение merge-строк из партнёров — в отборе у вызывающего),
 -- статусы склада для массового UPDATE, суммарной вставки и одиночной строки, режим поля Main (закупка / изготовление).
@@ -45,11 +47,16 @@ BEGIN
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 
-        /* 2) Всем отобранным: склад и Source */
+        /* 2) Склад и Source: в «закупке/изготовлении» только неотрицательные qty.
+           Отрицательный change не должен попадать в контур приёмки (ch_*_to_wh) до неттинга:
+           остаётся «Новая», затем после зачёта — Отменено/Норма или сводная строка. */
         UPDATE `Transactions` t
         INNER JOIN tmp_ch_outside_unite_ids x ON x.id = t.id
         SET
-            t.`Status_warehouse` = p_wh_bulk,
+            t.`Status_warehouse` = CASE
+                                      WHEN COALESCE(t.`Quantity_change`, 0) < 0 THEN 'Новая'
+                                      ELSE p_wh_bulk
+                                   END,
             t.`Source`           = p_source,
             t.`updated_at`       = NOW(),
             t.`updated_by`       = CASE
@@ -336,7 +343,47 @@ BEGIN
                 m.`updated_by`              = p_proc_name;
         END IF;
 
-        /* 4) cnt >= 2: суммарная строка, linked, Заменено */
+        /*
+         * Отмена без «фантомной» merge-строки с Quantity_change = 0:
+         *  - cnt >= 2 и после неттинга adj_qty = 0 — одна сумма по группе 0, новую строку не создаём;
+         *    исходные строки переводим в Отменено, Quantity_change с сохранением (для целостности).
+         *  - cnt = 1 и adj_qty <= 0 — то же: только статусы, количество не перезаписываем.
+         */
+        UPDATE `Transactions` t
+        INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
+        INNER JOIN tmp_ch_outside_unite_group_agg g
+          ON g.`ERP_ID` = x.`ERP_ID`
+         AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
+        SET
+            t.`Status_transaction` = 'Отменено',
+            t.`Status_warehouse`   = 'Норма',
+            t.`Source`             = p_source,
+            t.`updated_at`         = NOW(),
+            t.`updated_by`         = CASE
+                                        WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
+                                        ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
+                                     END
+        WHERE g.`cnt` >= 2
+          AND COALESCE(g.`adj_qty`, 0) = 0;
+
+        UPDATE `Transactions` t
+        INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
+        INNER JOIN tmp_ch_outside_unite_group_agg g
+          ON g.`ERP_ID` = x.`ERP_ID`
+         AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
+        SET
+            t.`Status_transaction` = 'Отменено',
+            t.`Status_warehouse`   = 'Норма',
+            t.`Source`             = p_source,
+            t.`updated_at`         = NOW(),
+            t.`updated_by`         = CASE
+                                        WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
+                                        ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
+                                     END
+        WHERE g.`cnt` = 1
+          AND COALESCE(g.`adj_qty`, 0) <= 0;
+
+        /* 4) cnt >= 2 и нетто <> 0: одна суммарная строка, linked, Заменено (без вставки при adj_qty = 0) */
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_replace_queue;
         CREATE TEMPORARY TABLE tmp_ch_outside_unite_replace_queue (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -348,7 +395,7 @@ BEGIN
         SELECT `ERP_ID`, `ag_key`
         FROM tmp_ch_outside_unite_group_agg
         WHERE `cnt` >= 2
-           OR COALESCE(`adj_qty`, 0) <= 0;
+          AND COALESCE(`adj_qty`, 0) <> 0;
 
         replace_loop: LOOP
             SELECT COUNT(*) INTO v_queue_left FROM tmp_ch_outside_unite_replace_queue;
@@ -366,13 +413,17 @@ BEGIN
                 Quantity_of_parts_total, Quantity_change, Status_transaction,
                 Project, Target_assembly, Supplied_component_number, Component_revision, Component_name,
                 Quantity_in_target_assembly, Quantity_of_target_assemblies, Components_quantity_in_assembly,
+                Assembly_batch_id, Assembly_batch_name, Assembly_batch_status, Assembly_batch_priority,
                 Component_type, For_supplied_as_assembly_components_provided_by_supplier, Part_material,
                 Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
                 MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length,
                 Advanced_group, Address,
-                Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+                Recommend_purchprod,
+                Order_purch, Order_wh, Order_prod, Order_OTK,
+                Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
+                Status_warehouse,
+                Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
                 Supplier, Location, Source, Initial_doc_no,
-                Order_purch, Order_wh, Order_prod, Order_OTK, Status_warehouse,
                 created_by, updated_by, created_at, updated_at
             )
             SELECT
@@ -386,17 +437,27 @@ BEGIN
                 CASE WHEN g.`adj_qty` <= 0 THEN 'Отменено' ELSE 'В ожидании' END,
                 fld.`Project`, fld.`Target_assembly`, fld.`Supplied_component_number`, fld.`Component_revision`, fld.`Component_name`,
                 fld.`Quantity_in_target_assembly`, fld.`Quantity_of_target_assemblies`, fld.`Components_quantity_in_assembly`,
+                fld.`Assembly_batch_id`, fld.`Assembly_batch_name`, fld.`Assembly_batch_status`, fld.`Assembly_batch_priority`,
                 fld.`Component_type`, fld.`For_supplied_as_assembly_components_provided_by_supplier`, fld.`Part_material`,
                 fld.`Producer`, fld.`Catalogue_number`, fld.`Producer_article`, fld.`Distributer`, fld.`Distributer_article`,
                 fld.`MBOM_type`, fld.`Mass_kg`, fld.`Unit_of_measure`, fld.`Height`, fld.`Width`, fld.`Length`,
                 fld.`Advanced_group`, fld.`Address`,
-                fld.`Document_no`, fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
-                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
+                fld.`Recommend_purchprod`,
                 fld.`Order_purch`,
                 NULL,
                 fld.`Order_prod`,
                 fld.`Order_OTK`,
+                fld.`Order_sv`,
+                fld.`Recommend_wh`,
+                fld.`sum_qty_ord`,
+                fld.`Replace_to`,
+                fld.`Rework_to`,
+                fld.`Rework_from`,
                 CASE WHEN g.`adj_qty` <= 0 THEN 'Норма' ELSE p_wh_merge END,
+                fld.`Document_no`,
+                fld.`Document_date`,
+                fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
+                fld.`Supplier`, fld.`Location`, fld.`Source`, fld.`Initial_doc_no`,
                 p_proc_name,
                 p_proc_name,
                 NOW(),
@@ -414,6 +475,10 @@ BEGIN
                     MIN(t.`Quantity_in_target_assembly`) AS `Quantity_in_target_assembly`,
                     MIN(t.`Quantity_of_target_assemblies`) AS `Quantity_of_target_assemblies`,
                     MIN(t.`Components_quantity_in_assembly`) AS `Components_quantity_in_assembly`,
+                    MIN(t.`Assembly_batch_id`) AS `Assembly_batch_id`,
+                    MIN(t.`Assembly_batch_name`) AS `Assembly_batch_name`,
+                    MIN(t.`Assembly_batch_status`) AS `Assembly_batch_status`,
+                    MIN(t.`Assembly_batch_priority`) AS `Assembly_batch_priority`,
                     MIN(t.`Component_type`) AS `Component_type`,
                     MIN(t.`For_supplied_as_assembly_components_provided_by_supplier`) AS `For_supplied_as_assembly_components_provided_by_supplier`,
                     MIN(t.`Part_material`) AS `Part_material`,
@@ -430,7 +495,9 @@ BEGIN
                     MIN(t.`Length`) AS `Length`,
                     MIN(t.`Advanced_group`) AS `Advanced_group`,
                     MIN(t.`Address`) AS `Address`,
+                    MIN(t.`Recommend_purchprod`) AS `Recommend_purchprod`,
                     MIN(t.`Document_no`) AS `Document_no`,
+                    MIN(t.`Document_date`) AS `Document_date`,
                     MIN(t.`Zakaz_no`) AS `Zakaz_no`,
                     MIN(t.`Date_needed`) AS `Date_needed`,
                     MIN(t.`Date_expected`) AS `Date_expected`,
@@ -441,14 +508,21 @@ BEGIN
                     MIN(t.`Initial_doc_no`) AS `Initial_doc_no`,
                     MIN(t.`Order_purch`) AS `Order_purch`,
                     MIN(t.`Order_prod`) AS `Order_prod`,
-                    MIN(t.`Order_OTK`) AS `Order_OTK`
+                    MIN(t.`Order_OTK`) AS `Order_OTK`,
+                    MIN(t.`Order_sv`) AS `Order_sv`,
+                    MIN(t.`Recommend_wh`) AS `Recommend_wh`,
+                    SUM(COALESCE(t.`Quantity_ordered`, 0)) AS `sum_qty_ord`,
+                    MIN(t.`Replace_to`) AS `Replace_to`,
+                    MIN(t.`Rework_to`) AS `Rework_to`,
+                    MIN(t.`Rework_from`) AS `Rework_from`
                 FROM `Transactions` t
                 INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
                 GROUP BY t.`ERP_ID`, COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '')
             ) fld
               ON fld.`ERP_ID` = g.`ERP_ID`
              AND fld.`ag_key` = g.`ag_key`
-            WHERE (g.`cnt` >= 2 OR COALESCE(g.`adj_qty`, 0) <= 0)
+            WHERE g.`cnt` >= 2
+              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -456,7 +530,10 @@ BEGIN
 
             UPDATE `Transactions` t
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`updated_at`         = NOW(),
                 t.`updated_by`         = CASE
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
@@ -470,7 +547,10 @@ BEGIN
               ON g.`ERP_ID` = x.`ERP_ID`
              AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
             SET
-                t.`linked_transaction` = v_new_id,
+                t.`linked_transaction` = CASE
+                    WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
+                    ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
+                END,
                 t.`Status_transaction` = 'Заменено',
                 t.`Status_warehouse`   = 'Норма',
                 t.`Source`             = p_source,
@@ -479,7 +559,8 @@ BEGIN
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
                                             ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
                                          END
-            WHERE (g.`cnt` >= 2 OR COALESCE(g.`adj_qty`, 0) <= 0)
+            WHERE g.`cnt` >= 2
+              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -513,6 +594,8 @@ BEGIN
                              END
         WHERE g.`cnt` = 1
           AND COALESCE(g.`adj_qty`, 0) > 0;
+
+        /* cnt = 1 и adj_qty > 0: количество приводим к нетто; отменённые одиночные строки уже обработаны выше без смены Quantity_change */
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_delta;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_total;
