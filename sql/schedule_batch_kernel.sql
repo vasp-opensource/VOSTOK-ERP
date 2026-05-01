@@ -213,6 +213,15 @@ BEGIN
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
+        SET v_step_no = 14;
+        SET v_current_proc = 'return_shopfloor_to_wh_direct';
+        SET v_step_started = NOW(6);
+        CALL return_shopfloor_to_wh_direct();
+        SET v_step_finished = NOW(6);
+        INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
         SET v_batch_finished = NOW(6);
         INSERT INTO `kernel_log` (
             run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at

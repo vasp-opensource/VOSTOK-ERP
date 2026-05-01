@@ -9,6 +9,7 @@ proc: BEGIN
     DECLARE v_proc_name VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'replace_new';
 
     DECLARE v_source_id BIGINT DEFAULT NULL;
+    DECLARE v_source_erp_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
     DECLARE v_source_replace_to VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
     DECLARE v_source_type VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
     DECLARE v_source_where_from VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
@@ -27,9 +28,11 @@ proc: BEGIN
     DECLARE v_new_id_change BIGINT DEFAULT NULL;
     DECLARE v_created_from DATETIME(6) DEFAULT NULL;
     DECLARE v_link_token VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+    DECLARE v_source_stock_qty DECIMAL(18,6) DEFAULT 0;
 
     SELECT
         t.id,
+        t.ERP_ID,
         t.Replace_to,
         t.type,
         t.where_from,
@@ -44,6 +47,7 @@ proc: BEGIN
         t.Order_OTK
     INTO
         v_source_id,
+        v_source_erp_id,
         v_source_replace_to,
         v_source_type,
         v_source_where_from,
@@ -99,6 +103,10 @@ proc: BEGIN
 
     SET v_link_token = CONCAT(v_source_id, '; ');
     SET v_created_from = NOW(6);
+    SET v_source_stock_qty = CASE
+        WHEN COALESCE(v_source_qty_total, 0) <> 0 THEN COALESCE(v_source_qty_total, 0)
+        ELSE COALESCE(v_source_qty_change, 0)
+    END;
 
     IF v_source_type = 'move' THEN
         CALL create_row(
@@ -157,13 +165,38 @@ proc: BEGIN
 
         UPDATE Transactions
         SET
-            Status_transaction = 'Отменено',
+            Status_transaction = 'Заменен ID',
             updated_at = NOW(),
             updated_by = CASE
                 WHEN updated_by IS NULL OR updated_by = '' THEN CONCAT(v_proc_name, '; ')
                 ELSE CONCAT(updated_by, v_proc_name, '; ')
             END
         WHERE id = v_source_id;
+
+        UPDATE Main
+        SET
+            inProcess_purchase = CASE
+                WHEN v_source_status_warehouse = 'В закупке'
+                    THEN COALESCE(inProcess_purchase, 0) - COALESCE(v_source_qty_change, 0)
+                ELSE inProcess_purchase
+            END,
+            inProcess_manufacturing = CASE
+                WHEN v_source_status_warehouse = 'В изготовлении'
+                    THEN COALESCE(inProcess_manufacturing, 0) - COALESCE(v_source_qty_change, 0)
+                ELSE inProcess_manufacturing
+            END,
+            Quantity_on_shopfloor = CASE
+                WHEN v_source_status_warehouse IN ('Сборка', 'Упаковка', 'Утилизация', 'Доработка')
+                    THEN COALESCE(Quantity_on_shopfloor, 0) - COALESCE(v_source_stock_qty, 0)
+                ELSE Quantity_on_shopfloor
+            END,
+            Quantity_in_kitting = CASE
+                WHEN v_source_status_warehouse = 'Комплектация'
+                    THEN COALESCE(Quantity_in_kitting, 0) - COALESCE(v_source_stock_qty, 0)
+                ELSE Quantity_in_kitting
+            END
+        WHERE ERP_ID COLLATE utf8mb4_unicode_ci = v_source_erp_id COLLATE utf8mb4_unicode_ci
+          AND v_source_status_warehouse IN ('В закупке', 'В изготовлении', 'Сборка', 'Упаковка', 'Утилизация', 'Доработка', 'Комплектация');
 
         UPDATE Transactions
         SET
@@ -210,13 +243,38 @@ proc: BEGIN
 
         UPDATE Transactions
         SET
-            Status_transaction = 'Отменено',
+            Status_transaction = 'Заменен ID',
             updated_at = NOW(),
             updated_by = CASE
                 WHEN updated_by IS NULL OR updated_by = '' THEN CONCAT(v_proc_name, '; ')
                 ELSE CONCAT(updated_by, v_proc_name, '; ')
             END
         WHERE id = v_source_id;
+
+        UPDATE Main
+        SET
+            inProcess_purchase = CASE
+                WHEN v_source_status_warehouse = 'В закупке'
+                    THEN COALESCE(inProcess_purchase, 0) - COALESCE(v_source_qty_change, 0)
+                ELSE inProcess_purchase
+            END,
+            inProcess_manufacturing = CASE
+                WHEN v_source_status_warehouse = 'В изготовлении'
+                    THEN COALESCE(inProcess_manufacturing, 0) - COALESCE(v_source_qty_change, 0)
+                ELSE inProcess_manufacturing
+            END,
+            Quantity_on_shopfloor = CASE
+                WHEN v_source_status_warehouse IN ('Сборка', 'Упаковка', 'Утилизация', 'Доработка')
+                    THEN COALESCE(Quantity_on_shopfloor, 0) - COALESCE(v_source_stock_qty, 0)
+                ELSE Quantity_on_shopfloor
+            END,
+            Quantity_in_kitting = CASE
+                WHEN v_source_status_warehouse = 'Комплектация'
+                    THEN COALESCE(Quantity_in_kitting, 0) - COALESCE(v_source_stock_qty, 0)
+                ELSE Quantity_in_kitting
+            END
+        WHERE ERP_ID COLLATE utf8mb4_unicode_ci = v_source_erp_id COLLATE utf8mb4_unicode_ci
+          AND v_source_status_warehouse IN ('В закупке', 'В изготовлении', 'Сборка', 'Упаковка', 'Утилизация', 'Доработка', 'Комплектация');
 
         UPDATE Transactions
         SET

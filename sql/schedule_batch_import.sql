@@ -96,9 +96,9 @@ BEGIN
 
     IF v_batch_lock = 1 THEN
         SET v_step_no = 1;
-        SET v_current_proc = 'check_import';
+        SET v_current_proc = 'import_check';
         SET v_step_started = NOW(6);
-        CALL check_import();
+        CALL import_check();
         SET v_step_finished = NOW(6);
         INSERT INTO `import_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_import', v_step_no, v_current_proc, v_step_started, v_step_finished,

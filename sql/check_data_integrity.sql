@@ -1,5 +1,5 @@
 -- check_data_integrity: проверки согласованности Main и Transactions; нарушения пишутся в integrity_check_log.
--- После блока (3) вызывается check_imported_quantity (сверка импорта с Main).
+-- Проверки, связанные с таблицей Import, выполняет самостоятельная процедура check_imported_quantity.
 -- Отборы по «открытым» / «закрытым» согласованы с процедурами move_wh_to_shopfloor, move_kit_to_shopfloor,
 -- ch_outside_to_purch, ch_outside_to_ownProd, move_shop_to_fin. При смене бизнес-правил скорректируйте WHERE.
 -- Внешние change: type=change, where_from=«внешний», where_to=«склад». Контур закупка/производство — только по Source и Status_warehouse
@@ -31,6 +31,23 @@ BEGIN
         `error_message` TEXT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions;
+    CREATE TEMPORARY TABLE tmp_integrity_transactions AS
+    SELECT *
+    FROM `Transactions`
+    WHERE `Status_transaction` IS NULL
+       OR `Status_transaction` <> 'Заменен ID';
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions_2;
+    CREATE TEMPORARY TABLE tmp_integrity_transactions_2 AS
+    SELECT *
+    FROM tmp_integrity_transactions;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions_3;
+    CREATE TEMPORARY TABLE tmp_integrity_transactions_3 AS
+    SELECT *
+    FROM tmp_integrity_transactions;
+
     /* 1) Комплектация: сумма открытых move со статусом склада «Комплектация» = Main.Quantity_in_kitting */
     INSERT INTO `tmp_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
     SELECT
@@ -52,7 +69,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND (`Status_transaction` IS NULL OR `Status_transaction` = 'В ожидании')
           AND `Status_warehouse` = 'Комплектация'
@@ -79,7 +96,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND (`Status_transaction` IS NULL OR `Status_transaction` = 'В ожидании')
           AND `Status_warehouse` = 'Комплектация'
@@ -104,7 +121,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `where_from` = 'внешний'
           AND `where_to` = 'склад'
@@ -132,7 +149,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `where_from` = 'внешний'
           AND `where_to` = 'склад'
@@ -164,7 +181,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `where_from` = 'внешний'
           AND `where_to` = 'склад'
@@ -188,7 +205,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `where_from` = 'внешний'
           AND `where_to` = 'склад'
@@ -211,7 +228,7 @@ BEGIN
             ' id=', `id`,
             ' Source=Собственное производство при Status_warehouse=В закупке'
         )
-    FROM `Transactions`
+    FROM `tmp_integrity_transactions`
     WHERE `type` = 'change'
       AND `where_from` = 'внешний'
       AND `where_to` = 'склад'
@@ -229,7 +246,7 @@ BEGIN
             ' id=', `id`,
             ' Source=Покупное при Status_warehouse=В изготовлении'
         )
-    FROM `Transactions`
+    FROM `tmp_integrity_transactions`
     WHERE `type` = 'change'
       AND `where_from` = 'внешний'
       AND `where_to` = 'склад'
@@ -257,7 +274,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS qty_move
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `Status_warehouse` = 'Ожидание закупки'
           AND (
@@ -271,7 +288,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS qty_change
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions_2`
         WHERE `type` = 'change'
           AND `where_from` = 'внешний'
           AND `where_to` = 'склад'
@@ -309,7 +326,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `Status_transaction` = 'Исполнено'
         GROUP BY `ERP_ID`
@@ -335,7 +352,7 @@ BEGIN
         SELECT
             `ERP_ID`,
             SUM(COALESCE(`Quantity_change`, 0)) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'change'
           AND `Status_transaction` = 'Исполнено'
         GROUP BY `ERP_ID`
@@ -343,8 +360,6 @@ BEGIN
     LEFT JOIN `Main` m ON m.`ERP_ID` = t.`ERP_ID`
     WHERE m.`ERP_ID` IS NULL
       AND t.tx_sum <> 0;
-
-    CALL check_imported_quantity();
 
     /* 4–6) Закрытые move в брак / отгрузку / изделие = Quantity_of_losses / Quantity_shipped / Quantity_implemented */
     INSERT INTO `tmp_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
@@ -367,7 +382,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'брак'
           AND `Status_transaction` = 'Исполнено'
@@ -394,7 +409,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'брак'
           AND `Status_transaction` = 'Исполнено'
@@ -424,7 +439,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'отгрузка'
           AND `Status_transaction` = 'Исполнено'
@@ -451,7 +466,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'отгрузка'
           AND `Status_transaction` = 'Исполнено'
@@ -481,7 +496,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'изделие'
           AND `Status_transaction` = 'Исполнено'
@@ -508,7 +523,7 @@ BEGIN
                     COALESCE(`Quantity_change`, 0)
                 )
             ) AS tx_sum
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE `type` = 'move'
           AND `where_to` = 'изделие'
           AND `Status_transaction` = 'Исполнено'
@@ -533,7 +548,7 @@ BEGIN
         )
     FROM (
         SELECT DISTINCT `ERP_ID`
-        FROM `Transactions`
+        FROM `tmp_integrity_transactions`
         WHERE COALESCE(`Quantity_of_parts_total`, 0) <> 0
            OR COALESCE(`Quantity_change`, 0) <> 0
     ) d
@@ -541,7 +556,7 @@ BEGIN
     WHERE m.`ERP_ID` IS NULL
       AND EXISTS (
           SELECT 1
-          FROM `Transactions` t
+          FROM `tmp_integrity_transactions_3` t
           WHERE t.`ERP_ID` = d.`ERP_ID`
             AND (
                 COALESCE(t.`Quantity_of_parts_total`, 0) <> 0
@@ -571,6 +586,9 @@ BEGIN
           AND l.`error_message` = (c.`error_message` COLLATE utf8mb4_unicode_ci)
     );
 
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions_3;
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions_2;
+    DROP TEMPORARY TABLE IF EXISTS tmp_integrity_transactions;
     DROP TEMPORARY TABLE IF EXISTS tmp_integrity_candidates;
 END$$
 
