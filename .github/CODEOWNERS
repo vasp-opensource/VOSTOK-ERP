@@ -1,0 +1,8 @@
+# CODEOWNERS: автоматическое назначение ревьюеров на PR.
+# Синтаксис: шаблон_пути @github-login или @org/team-name
+# Документация: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Замените ниже на свою команду или добавьте вторую строку с другим владельцем:
+# * @vasp-opensource/sql-reviewers
+
+* @vpyzhyanov

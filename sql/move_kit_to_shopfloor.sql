@@ -64,6 +64,13 @@ BEGIN
 
     END IF;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_move_wh_to_shopfloor lock is already held';
+
+    END IF;
+
     IF v_lock_ok <> 1 THEN
         INSERT INTO `proc_transaction_move_log` (`level`, `message`)
         VALUES ('WARN', 'Procedure skipped: another instance is already running');
