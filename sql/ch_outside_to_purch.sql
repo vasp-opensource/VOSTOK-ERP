@@ -12,6 +12,15 @@ DROP PROCEDURE IF EXISTS ch_outside_to_purch$$
 
 CREATE PROCEDURE ch_outside_to_purch()
 BEGIN
+    DECLARE EXIT HANDLER FOR 3572, 1213, 1205
+    BEGIN
+        SET @erp_batch_blocked_message = 'Blocked: ch_outside_to_purch lock conflict';
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_pick;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_snapshot;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
+    END;
+
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
     CREATE TEMPORARY TABLE tmp_ch_outside_unite_ids (
         id INT UNSIGNED PRIMARY KEY,
@@ -33,7 +42,14 @@ BEGIN
     WHERE t.Status_warehouse IN ('Новая', 'Дефицит закупки')
       AND t.Status_transaction = 'В ожидании'
       AND t.Order_purch IN ('В закупке', 'Оплачено')
-      AND t.Order_prod = 'В закупку'
+      AND (
+          t.Order_prod = 'В закупку'
+          OR t.Recommend_purchprod IN ('В закупку', 'Уточнить ревизию в закупке')
+          OR (
+              t.Recommend_purchprod = 'Уточнить кол-во в закупке'
+              AND t.Order_purch = 'В закупке'
+          )
+      )
       AND t.type = 'change'
       AND t.where_from = 'внешний'
       AND t.where_to = 'склад';

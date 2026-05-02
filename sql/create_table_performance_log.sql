@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `performance_log` (
     `started_at` DATETIME(6) NOT NULL,
     `finished_at` DATETIME(6) NOT NULL,
     `duration_ms` DECIMAL(16,3) NOT NULL,
-    `status` ENUM('OK', 'ERROR') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'OK',
+    `status` ENUM('OK', 'ERROR', 'BLOCKED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'OK',
     `error_message` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (`id`),

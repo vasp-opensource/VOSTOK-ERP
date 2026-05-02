@@ -27,6 +27,7 @@ proc: BEGIN
   DECLARE v_split_from DATETIME(6) DEFAULT NULL;
   DECLARE v_created_from DATETIME(6) DEFAULT NULL;
   DECLARE v_new_id BIGINT DEFAULT NULL;
+  DECLARE v_return_id BIGINT DEFAULT NULL;
   DECLARE v_link_token VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
   SELECT
@@ -104,7 +105,7 @@ proc: BEGIN
       v_quantity_replaced,
       0,
       v_source_status_transaction,
-      v_source_status_warehouse,
+      'Новая',
       v_source_order_purch,
       v_source_order_wh,
       v_source_order_prod,
@@ -122,6 +123,140 @@ proc: BEGIN
       AND t.created_at >= v_created_from
     ORDER BY t.created_at DESC, t.id DESC
     LIMIT 1;
+
+    IF v_source_status_warehouse IN ('Сборка', 'Упаковка', 'Утилизация', 'Доработка') THEN
+      INSERT INTO Transactions (
+        ERP_ID,
+        created_at,
+        updated_at,
+        created_by,
+        updated_by,
+        linked_transaction,
+        type,
+        where_from,
+        where_to,
+        Quantity_of_parts_total,
+        Quantity_change,
+        Status_transaction,
+        Status_warehouse,
+        Project,
+        Target_assembly,
+        Supplied_component_number,
+        Component_revision,
+        Component_name,
+        Quantity_in_target_assembly,
+        Quantity_of_target_assemblies,
+        Component_type,
+        For_supplied_as_assembly_components_provided_by_supplier,
+        Components_quantity_in_assembly,
+        Assembly_batch_id,
+        Assembly_batch_name,
+        Assembly_batch_status,
+        Assembly_batch_priority,
+        Part_material,
+        Producer,
+        Catalogue_number,
+        Producer_article,
+        Distributer,
+        Distributer_article,
+        MBOM_type,
+        Mass_kg,
+        Unit_of_measure,
+        Height,
+        Width,
+        Length,
+        Advanced_group,
+        Address,
+        Recommend_purchprod,
+        Order_purch,
+        Order_wh,
+        Order_prod,
+        Order_OTK,
+        Order_sv,
+        Recommend_wh,
+        Quantity_ordered,
+        Replace_to,
+        Rework_to,
+        Rework_from,
+        Document_no,
+        Document_date,
+        Zakaz_no,
+        Date_needed,
+        Date_expected,
+        Cost_total_rub,
+        Supplier,
+        Location,
+        Source,
+        Initial_doc_no
+      )
+      SELECT
+        t.ERP_ID,
+        NOW(),
+        NOW(),
+        v_proc_name,
+        v_proc_name,
+        NULL,
+        'move',
+        'цех',
+        'склад',
+        v_quantity_replaced,
+        0,
+        t.Status_transaction,
+        t.Status_warehouse,
+        t.Project,
+        t.Target_assembly,
+        t.Supplied_component_number,
+        t.Component_revision,
+        t.Component_name,
+        t.Quantity_in_target_assembly,
+        t.Quantity_of_target_assemblies,
+        t.Component_type,
+        t.For_supplied_as_assembly_components_provided_by_supplier,
+        t.Components_quantity_in_assembly,
+        t.Assembly_batch_id,
+        t.Assembly_batch_name,
+        t.Assembly_batch_status,
+        t.Assembly_batch_priority,
+        t.Part_material,
+        t.Producer,
+        t.Catalogue_number,
+        t.Producer_article,
+        t.Distributer,
+        t.Distributer_article,
+        t.MBOM_type,
+        t.Mass_kg,
+        t.Unit_of_measure,
+        t.Height,
+        t.Width,
+        t.Length,
+        t.Advanced_group,
+        t.Address,
+        t.Recommend_purchprod,
+        t.Order_purch,
+        t.Order_wh,
+        t.Order_prod,
+        t.Order_OTK,
+        NULL,
+        t.Recommend_wh,
+        t.Quantity_ordered,
+        NULL,
+        t.Rework_to,
+        t.Rework_from,
+        t.Document_no,
+        t.Document_date,
+        t.Zakaz_no,
+        t.Date_needed,
+        t.Date_expected,
+        t.Cost_total_rub,
+        t.Supplier,
+        t.Location,
+        t.Source,
+        t.Initial_doc_no
+      FROM Transactions t
+      WHERE t.id = v_source_id;
+
+      SET v_return_id = LAST_INSERT_ID();
+    END IF;
 
     UPDATE Transactions
     SET
@@ -149,18 +284,18 @@ proc: BEGIN
           THEN COALESCE(inProcess_manufacturing, 0) - COALESCE(v_quantity_replaced, 0)
         ELSE inProcess_manufacturing
       END,
-      Quantity_on_shopfloor = CASE
-        WHEN v_source_status_warehouse IN ('Сборка', 'Упаковка', 'Утилизация', 'Доработка')
-          THEN COALESCE(Quantity_on_shopfloor, 0) - COALESCE(v_quantity_replaced, 0)
-        ELSE Quantity_on_shopfloor
-      END,
       Quantity_in_kitting = CASE
         WHEN v_source_status_warehouse = 'Комплектация'
           THEN COALESCE(Quantity_in_kitting, 0) - COALESCE(v_quantity_replaced, 0)
         ELSE Quantity_in_kitting
+      END,
+      Quantity_in_warehouse = CASE
+        WHEN v_source_status_warehouse = 'Комплектация'
+          THEN COALESCE(Quantity_in_warehouse, 0) + COALESCE(v_quantity_replaced, 0)
+        ELSE Quantity_in_warehouse
       END
     WHERE ERP_ID COLLATE utf8mb4_unicode_ci = v_source_erp_id COLLATE utf8mb4_unicode_ci
-      AND v_source_status_warehouse IN ('В закупке', 'В изготовлении', 'Сборка', 'Упаковка', 'Утилизация', 'Доработка', 'Комплектация');
+      AND v_source_status_warehouse IN ('В закупке', 'В изготовлении', 'Комплектация');
 
     IF v_new_id IS NOT NULL THEN
       UPDATE Transactions
@@ -175,6 +310,21 @@ proc: BEGIN
           ELSE CONCAT(TRIM(TRAILING ';' FROM TRIM(updated_by)), '; ', v_proc_name)
         END
       WHERE id = v_new_id;
+    END IF;
+
+    IF v_return_id IS NOT NULL THEN
+      UPDATE Transactions
+      SET
+        linked_transaction = CASE
+          WHEN linked_transaction IS NULL OR TRIM(linked_transaction) = '' THEN v_link_token
+          ELSE CONCAT(TRIM(TRAILING ';' FROM TRIM(linked_transaction)), '; ', v_link_token)
+        END,
+        updated_at = NOW(),
+        updated_by = CASE
+          WHEN updated_by IS NULL OR TRIM(updated_by) = '' THEN v_proc_name
+          ELSE CONCAT(TRIM(TRAILING ';' FROM TRIM(updated_by)), '; ', v_proc_name)
+        END
+      WHERE id = v_return_id;
     END IF;
   END IF;
 END$$

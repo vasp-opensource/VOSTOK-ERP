@@ -26,6 +26,13 @@ BEGIN
 
     SELECT GET_LOCK('lock_ch_unite_same_advGroup', 0) INTO v_lock_ok;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_ch_unite_same_advGroup lock is already held';
+
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 

@@ -20,6 +20,10 @@ BEGIN
     /* Защита от параллельного запуска */
     SELECT GET_LOCK('lock_process_purchase_change_to_main', 0) INTO v_lock_ok;
 
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+        SET @erp_batch_blocked_message = 'Blocked: lock_process_purchase_change_to_main lock is already held';
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 

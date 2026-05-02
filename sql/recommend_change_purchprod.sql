@@ -39,7 +39,7 @@ BEGIN
   WHERE t.`type` = 'change'
     AND t.`Status_transaction` = 'В ожидании'
     AND t.`Status_warehouse` = 'Новая'
-    AND t.`Recommend_purchprod` IS NULL;
+    AND (t.`Recommend_purchprod` IS NULL OR t.`Recommend_purchprod` = '');
 
   DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_erp_scope`;
   CREATE TEMPORARY TABLE `tmp_recommend_erp_scope` (
@@ -84,33 +84,37 @@ BEGIN
   CREATE TEMPORARY TABLE `tmp_sum_part_manuf` AS
   SELECT
     q.`pnum`,
+    q.`ERP_ID`,
     SUM(COALESCE(q.`Quantity_change`, 0)) AS sum_qty
   FROM (
     SELECT
       CAST(LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `pnum`,
+      CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
       t.`Quantity_change`
     FROM `Transactions` t
     WHERE t.`type` = 'change'
       AND t.`Status_warehouse` = 'В изготовлении'
   ) q
-  GROUP BY q.`pnum`;
-  ALTER TABLE `tmp_sum_part_manuf` ADD KEY `k_part` (`pnum`);
+  GROUP BY q.`pnum`, q.`ERP_ID`;
+  ALTER TABLE `tmp_sum_part_manuf` ADD KEY `k_part_erp` (`pnum`, `ERP_ID`);
 
   DROP TEMPORARY TABLE IF EXISTS `tmp_sum_part_purch`;
   CREATE TEMPORARY TABLE `tmp_sum_part_purch` AS
   SELECT
     q.`pnum`,
+    q.`ERP_ID`,
     SUM(COALESCE(q.`Quantity_change`, 0)) AS sum_qty
   FROM (
     SELECT
       CAST(LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `pnum`,
+      CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
       t.`Quantity_change`
     FROM `Transactions` t
     WHERE t.`type` = 'change'
       AND t.`Status_warehouse` = 'В закупке'
   ) q
-  GROUP BY q.`pnum`;
-  ALTER TABLE `tmp_sum_part_purch` ADD KEY `k_part` (`pnum`);
+  GROUP BY q.`pnum`, q.`ERP_ID`;
+  ALTER TABLE `tmp_sum_part_purch` ADD KEY `k_part_erp` (`pnum`, `ERP_ID`);
 
   /* 1) same_erp_id_inManuf > 0 */
   UPDATE `Transactions` t
@@ -130,7 +134,7 @@ BEGIN
   WHERE
     t.`type` = 'change'
     AND t.`Status_transaction` = 'В ожидании'
-    AND t.`Recommend_purchprod` IS NULL
+    AND (t.`Recommend_purchprod` IS NULL OR t.`Recommend_purchprod` = '')
     AND t.`Status_warehouse` IN ('Новая', 'В изготовлении')
     AND COALESCE(m.`sum_qty`, 0) > 0;
 
@@ -156,10 +160,27 @@ BEGIN
     AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в изготовлении')
     AND COALESCE(p.`sum_qty`, 0) > 0;
 
-  /* 3) same part + изг., не первые две уточнки, отриц. Quantity_change */
-  UPDATE `Transactions` t
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_part_manuf_revision`;
+  CREATE TEMPORARY TABLE `tmp_recommend_part_manuf_revision` (
+    `pnum` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    PRIMARY KEY (`pnum`)
+  ) AS
+  SELECT DISTINCT LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) AS `pnum`
+  FROM `Transactions` t
   INNER JOIN `tmp_recommend_part_scope` s ON s.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
-  LEFT JOIN `tmp_sum_part_manuf` m ON m.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
+  INNER JOIN `tmp_sum_part_manuf` m
+    ON m.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
+   AND NOT (m.`ERP_ID` COLLATE utf8mb4_unicode_ci <=> t.`ERP_ID` COLLATE utf8mb4_unicode_ci)
+  WHERE
+    t.`type` = 'change'
+    AND t.`Status_transaction` = 'В ожидании'
+    AND t.`Status_warehouse` IN ('Новая', 'В изготовлении')
+    AND t.`Quantity_change` < 0
+    AND COALESCE(m.`sum_qty`, 0) > 0;
+
+  /* 3) same part + other ERP_ID + изг.: обновить все подходящие строки этого supplied component */
+  UPDATE `Transactions` t
+  INNER JOIN `tmp_recommend_part_manuf_revision` r ON r.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
   SET
     t.`Recommend_purchprod` = 'Уточнить ревизию в изготовлении',
     t.`updated_at`         = NOW(),
@@ -175,21 +196,29 @@ BEGIN
     t.`type` = 'change'
     AND t.`Status_transaction` = 'В ожидании'
     AND t.`Status_warehouse` IN ('Новая', 'В изготовлении')
-    AND t.`Quantity_change` < 0
-    AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в изготовлении')
-    AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в закупке')
-    AND (
-      COALESCE(m.`sum_qty`, 0)
-      - CASE
-          WHEN t.`Status_warehouse` = 'В изготовлении' THEN COALESCE(t.`Quantity_change`, 0)
-          ELSE 0
-        END
-    ) > 0;
+    AND t.`Supplied_component_number` IS NOT NULL;
 
-  /* 4) part + закуп, не первые три, отриц. qty */
-  UPDATE `Transactions` t
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_part_purch_revision`;
+  CREATE TEMPORARY TABLE `tmp_recommend_part_purch_revision` (
+    `pnum` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    PRIMARY KEY (`pnum`)
+  ) AS
+  SELECT DISTINCT LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) AS `pnum`
+  FROM `Transactions` t
   INNER JOIN `tmp_recommend_part_scope` s ON s.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
-  LEFT JOIN `tmp_sum_part_purch` p ON p.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
+  INNER JOIN `tmp_sum_part_purch` p
+    ON p.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
+   AND NOT (p.`ERP_ID` COLLATE utf8mb4_unicode_ci <=> t.`ERP_ID` COLLATE utf8mb4_unicode_ci)
+  WHERE
+    t.`type` = 'change'
+    AND t.`Status_transaction` = 'В ожидании'
+    AND t.`Status_warehouse` IN ('Новая', 'В закупке')
+    AND t.`Quantity_change` < 0
+    AND COALESCE(p.`sum_qty`, 0) > 0;
+
+  /* 4) same part + other ERP_ID + закуп: обновить все подходящие строки этого supplied component */
+  UPDATE `Transactions` t
+  INNER JOIN `tmp_recommend_part_purch_revision` r ON r.`pnum` COLLATE utf8mb4_unicode_ci = LEFT(COALESCE(t.`Supplied_component_number`, ''), 255) COLLATE utf8mb4_unicode_ci
   SET
     t.`Recommend_purchprod` = 'Уточнить ревизию в закупке',
     t.`updated_at`         = NOW(),
@@ -205,23 +234,13 @@ BEGIN
     t.`type` = 'change'
     AND t.`Status_transaction` = 'В ожидании'
     AND t.`Status_warehouse` IN ('Новая', 'В закупке')
-    AND t.`Quantity_change` < 0
-    AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в изготовлении')
-    AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в закупке')
-    AND NOT (t.`Recommend_purchprod` <=> 'Уточнить ревизию в изготовлении')
-    AND (
-      COALESCE(p.`sum_qty`, 0)
-      - CASE
-          WHEN t.`Status_warehouse` = 'В закупке' THEN COALESCE(t.`Quantity_change`, 0)
-          ELSE 0
-        END
-    ) > 0;
+    AND t.`Supplied_component_number` IS NOT NULL;
 
   /* Остаток: по исходным кандидатам — компонентный сценарий (JSON) */
   SELECT JSON_ARRAYAGG(t.id) INTO v_ids
   FROM `Transactions` t
   INNER JOIN `tmp_recommend_purchprod_candidates` k ON k.id = t.id
-  WHERE t.`Recommend_purchprod` IS NULL;
+  WHERE t.`Recommend_purchprod` IS NULL OR t.`Recommend_purchprod` = '';
 
   IF v_ids IS NOT NULL AND JSON_TYPE(v_ids) = 'ARRAY' AND JSON_LENGTH(v_ids) > 0 THEN
     CALL `recommend_change_new`(v_ids);
@@ -229,6 +248,8 @@ BEGIN
 
   DROP TEMPORARY TABLE IF EXISTS `tmp_sum_part_purch`;
   DROP TEMPORARY TABLE IF EXISTS `tmp_sum_part_manuf`;
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_part_purch_revision`;
+  DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_part_manuf_revision`;
   DROP TEMPORARY TABLE IF EXISTS `tmp_sum_erp_purch`;
   DROP TEMPORARY TABLE IF EXISTS `tmp_sum_erp_manuf`;
   DROP TEMPORARY TABLE IF EXISTS `tmp_recommend_part_scope`;

@@ -2,9 +2,9 @@
 -- Выполнить на БД до деплоя процедур с CONCAT/CASE по linked_transaction.
 
 ALTER TABLE `Transactions`
-  MODIFY COLUMN `linked_transaction` VARCHAR(1024) NULL DEFAULT NULL
+  MODIFY COLUMN `linked_transaction` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
     COMMENT 'Связанные id через ; (не перезаписывать — дописывать)';
 
 ALTER TABLE `Import`
-  MODIFY COLUMN `linked_transaction` VARCHAR(1024) NULL DEFAULT NULL
+  MODIFY COLUMN `linked_transaction` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
     COMMENT 'Связанные id через ; (не перезаписывать — дописывать)';

@@ -11,13 +11,19 @@ DELIMITER $$
 CREATE PROCEDURE batch_performance_log()
 BEGIN
     DECLARE v_batch_lock INT DEFAULT 0;
+    DECLARE v_errno INT DEFAULT NULL;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
+        GET DIAGNOSTICS CONDITION 1
+            v_errno = MYSQL_ERRNO;
+
         IF v_batch_lock = 1 THEN
             DO RELEASE_LOCK('batch_performance_log');
         END IF;
-        RESIGNAL;
+        IF COALESCE(v_errno, 0) NOT IN (1205, 1213, 3572) THEN
+            RESIGNAL;
+        END IF;
     END;
 
     SELECT GET_LOCK('batch_performance_log', 0) INTO v_batch_lock;
