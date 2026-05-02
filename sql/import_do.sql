@@ -27,6 +27,13 @@ BEGIN
 
     SELECT GET_LOCK('lock_process_import_do', 0) INTO v_lock_ok;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_process_import_do lock is already held';
+
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 
@@ -46,6 +53,10 @@ BEGIN
         INNER JOIN tmp_import_do_initial_ids s ON s.id = i.id
         SET
             i.Status_import = 'Отменено',
+            i.updated_by = CASE
+                WHEN i.updated_by IS NULL OR TRIM(COALESCE(i.updated_by, '')) = '' THEN 'import_do'
+                ELSE CONCAT(i.updated_by, '; ', 'import_do')
+            END,
             i.updated_at = CURRENT_TIMESTAMP
         WHERE i.Order_import = 'Отменить'
           AND i.Status_import = 'Новая';
@@ -55,6 +66,10 @@ BEGIN
         INNER JOIN tmp_import_do_initial_ids s ON s.id = i.id
         SET
             i.Status_import = 'Отменено',
+            i.updated_by = CASE
+                WHEN i.updated_by IS NULL OR TRIM(COALESCE(i.updated_by, '')) = '' THEN 'import_do'
+                ELSE CONCAT(i.updated_by, '; ', 'import_do')
+            END,
             i.updated_at = CURRENT_TIMESTAMP
         WHERE i.Suggestion = 'Отменить'
           AND i.Order_import = 'Выполнить'
@@ -145,6 +160,10 @@ BEGIN
                 WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
                 ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
             END,
+            i.updated_by = CASE
+                WHEN i.updated_by IS NULL OR TRIM(COALESCE(i.updated_by, '')) = '' THEN 'import_do'
+                ELSE CONCAT(i.updated_by, '; ', 'import_do')
+            END,
             i.updated_at = CURRENT_TIMESTAMP
         WHERE i.Status_import = 'Новая';
 
@@ -176,6 +195,10 @@ BEGIN
             i.linked_transaction   = CASE
                 WHEN i.`linked_transaction` IS NULL OR TRIM(COALESCE(i.`linked_transaction`, '')) = '' THEN CAST(i.`id` AS CHAR)
                 ELSE CONCAT(TRIM(i.`linked_transaction`), '; ', i.`id`)
+            END,
+            i.updated_by = CASE
+                WHEN i.updated_by IS NULL OR TRIM(COALESCE(i.updated_by, '')) = '' THEN 'import_do'
+                ELSE CONCAT(i.updated_by, '; ', 'import_do')
             END,
             i.updated_at = CURRENT_TIMESTAMP;
 
@@ -336,6 +359,10 @@ BEGIN
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
         SET
             i.Status_import = 'Импортировано',
+            i.updated_by = CASE
+                WHEN i.updated_by IS NULL OR TRIM(COALESCE(i.updated_by, '')) = '' THEN 'import_do'
+                ELSE CONCAT(i.updated_by, '; ', 'import_do')
+            END,
             i.updated_at = CURRENT_TIMESTAMP;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;

@@ -67,6 +67,13 @@ BEGIN
 
     SELECT GET_LOCK('lock_move_shop_to_fin', 0) INTO v_lock_ok;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_move_shop_to_fin lock is already held';
+
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 

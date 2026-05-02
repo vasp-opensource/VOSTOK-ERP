@@ -31,9 +31,23 @@ BEGIN
     DECLARE v_new_id INT UNSIGNED;
     DECLARE v_queue_left INT DEFAULT 0;
 
+    DECLARE EXIT HANDLER FOR 3572, 1213, 1205
+    BEGIN
+        SET @erp_batch_blocked_message = CONCAT('Blocked: ', p_proc_name, ' lock conflict');
+        ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_tx_lock;
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK(@ch_outside_unite_lock);
+        END IF;
+        RESIGNAL;
+    END;
+
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_tx_lock;
         IF v_lock_ok = 1 THEN
             DO RELEASE_LOCK(@ch_outside_unite_lock);
         END IF;
@@ -44,8 +58,44 @@ BEGIN
 
     SELECT GET_LOCK(p_lock_name, 0) INTO v_lock_ok;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = CONCAT('Blocked: ', p_lock_name, ' lock is already held');
+
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
+
+        /* Берем row-lock по входным Transactions до любых UPDATE/INSERT. */
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_tx_lock;
+        CREATE TEMPORARY TABLE tmp_ch_outside_unite_tx_lock (
+            id INT UNSIGNED NOT NULL PRIMARY KEY
+        );
+
+        INSERT INTO tmp_ch_outside_unite_tx_lock (id)
+        SELECT t.id
+        FROM `Transactions` t
+        INNER JOIN tmp_ch_outside_unite_ids x ON x.id = t.id
+        ORDER BY t.id
+        FOR UPDATE NOWAIT;
+
+        /* Берем row-lock по существующим Main для ERP_ID батча; занятые строки обработаются в следующем такте. */
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_lock;
+        CREATE TEMPORARY TABLE tmp_ch_outside_unite_main_lock (
+            ERP_ID VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY
+        );
+
+        INSERT INTO tmp_ch_outside_unite_main_lock (ERP_ID)
+        SELECT m.ERP_ID
+        FROM `Main` m
+        INNER JOIN (
+            SELECT DISTINCT ERP_ID
+            FROM tmp_ch_outside_unite_ids
+        ) e ON e.ERP_ID COLLATE utf8mb4_unicode_ci = m.ERP_ID COLLATE utf8mb4_unicode_ci
+        ORDER BY m.ERP_ID
+        FOR UPDATE NOWAIT;
 
         /* 2) Склад и Source: в «закупке/изготовлении» только неотрицательные qty.
            Отрицательный change не должен попадать в контур приёмки (ch_*_to_wh) до неттинга:
@@ -344,28 +394,10 @@ BEGIN
         END IF;
 
         /*
-         * Отмена без «фантомной» merge-строки с Quantity_change = 0:
-         *  - cnt >= 2 и после неттинга adj_qty = 0 — одна сумма по группе 0, новую строку не создаём;
-         *    исходные строки переводим в Отменено, Quantity_change с сохранением (для целостности).
-         *  - cnt = 1 и adj_qty <= 0 — то же: только статусы, количество не перезаписываем.
+         * Одиночные отменяемые строки не создают merge-строку.
+         * Группы cnt >= 2 всегда проходят через суммарную строку, даже если adj_qty = 0:
+         * исходные строки становятся «Заменено», а суммарная строка с Quantity_change = 0 — «Отменено».
          */
-        UPDATE `Transactions` t
-        INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
-        INNER JOIN tmp_ch_outside_unite_group_agg g
-          ON g.`ERP_ID` = x.`ERP_ID`
-         AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
-        SET
-            t.`Status_transaction` = 'Отменено',
-            t.`Status_warehouse`   = 'Норма',
-            t.`Source`             = p_source,
-            t.`updated_at`         = NOW(),
-            t.`updated_by`         = CASE
-                                        WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN p_proc_name
-                                        ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
-                                     END
-        WHERE g.`cnt` >= 2
-          AND COALESCE(g.`adj_qty`, 0) = 0;
-
         UPDATE `Transactions` t
         INNER JOIN tmp_ch_outside_unite_ids x ON x.`id` = t.`id`
         INNER JOIN tmp_ch_outside_unite_group_agg g
@@ -383,7 +415,7 @@ BEGIN
         WHERE g.`cnt` = 1
           AND COALESCE(g.`adj_qty`, 0) <= 0;
 
-        /* 4) cnt >= 2 и нетто <> 0: одна суммарная строка, linked, Заменено (без вставки при adj_qty = 0) */
+        /* 4) cnt >= 2: одна суммарная строка, linked, исходные строки -> Заменено */
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_replace_queue;
         CREATE TEMPORARY TABLE tmp_ch_outside_unite_replace_queue (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -394,8 +426,7 @@ BEGIN
         INSERT INTO tmp_ch_outside_unite_replace_queue (`ERP_ID`, `ag_key`)
         SELECT `ERP_ID`, `ag_key`
         FROM tmp_ch_outside_unite_group_agg
-        WHERE `cnt` >= 2
-          AND COALESCE(`adj_qty`, 0) <> 0;
+        WHERE `cnt` >= 2;
 
         replace_loop: LOOP
             SELECT COUNT(*) INTO v_queue_left FROM tmp_ch_outside_unite_replace_queue;
@@ -522,7 +553,6 @@ BEGIN
               ON fld.`ERP_ID` = g.`ERP_ID`
              AND fld.`ag_key` = g.`ag_key`
             WHERE g.`cnt` >= 2
-              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -560,7 +590,6 @@ BEGIN
                                             ELSE CONCAT(t.`updated_by`, '; ', p_proc_name)
                                          END
             WHERE g.`cnt` >= 2
-              AND COALESCE(g.`adj_qty`, 0) <> 0
               AND g.`ERP_ID` = v_erp_id
               AND g.`ag_key` = v_ag_key;
 
@@ -601,6 +630,8 @@ BEGIN
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_total;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_incoming_total;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_group_agg;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_tx_lock;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
 
         COMMIT;

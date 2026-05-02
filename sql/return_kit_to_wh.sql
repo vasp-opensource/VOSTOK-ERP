@@ -42,6 +42,13 @@ BEGIN
 
     SELECT GET_LOCK('lock_return_kit_to_wh', 0) INTO v_lock_ok;
 
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_return_kit_to_wh lock is already held';
+
+    END IF;
+
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
 

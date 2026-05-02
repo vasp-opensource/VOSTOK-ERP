@@ -177,6 +177,10 @@ BEGIN
             ELSE 0
         END,
         i.`Suggestion` = i.`Suggestion`,
+        i.`updated_by` = CASE
+            WHEN i.`updated_by` IS NULL OR TRIM(COALESCE(i.`updated_by`, '')) = '' THEN 'import_check'
+            ELSE CONCAT(i.`updated_by`, '; ', 'import_check')
+        END,
         i.`updated_at` = CURRENT_TIMESTAMP
     WHERE i.`Status_import` = 'Новая';
 
@@ -219,6 +223,10 @@ BEGIN
                  (COALESCE(i.`Can_be_cancelled_sure`, 0) + COALESCE(i.`Can_be_cancelled_maybe`, 0))
             THEN 'Заменить'
             ELSE 'Импортировать'
+        END,
+        i.`updated_by` = CASE
+            WHEN i.`updated_by` IS NULL OR TRIM(COALESCE(i.`updated_by`, '')) = '' THEN 'import_check'
+            ELSE CONCAT(i.`updated_by`, '; ', 'import_check')
         END,
         i.`updated_at` = CURRENT_TIMESTAMP
     WHERE i.`Status_import` = 'Новая';

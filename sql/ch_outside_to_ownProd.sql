@@ -13,6 +13,16 @@ DROP PROCEDURE IF EXISTS ch_outside_to_ownProd$$
 
 CREATE PROCEDURE ch_outside_to_ownProd()
 BEGIN
+    DECLARE EXIT HANDLER FOR 3572, 1213, 1205
+    BEGIN
+        SET @erp_batch_blocked_message = 'Blocked: ch_outside_to_ownProd lock conflict';
+        DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_pick;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_snapshot;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
+    END;
+
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
     CREATE TEMPORARY TABLE tmp_ch_outside_unite_ids (
         id INT UNSIGNED PRIMARY KEY,
@@ -35,7 +45,11 @@ BEGIN
       AND t.Status_transaction = 'В ожидании'
       AND (
           t.Order_purch = 'Собственное производство'
-          OR t.Recommend_purchprod IN ('В собственное производство', 'Уточнить ревизию в изготовлении')
+          OR t.Recommend_purchprod IN (
+              'В собственное производство',
+              'Уточнить ревизию в изготовлении',
+              'Уточнить кол-во в изготовлении'
+          )
       )
       AND t.Order_prod = 'Принято в изготовление'
       AND t.type = 'change'

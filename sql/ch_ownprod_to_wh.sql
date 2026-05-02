@@ -26,9 +26,22 @@ CREATE PROCEDURE ch_ownprod_to_wh()
 BEGIN
     DECLARE v_lock_ok INT DEFAULT 0;
 
+    DECLARE EXIT HANDLER FOR 3572, 1213, 1205
+    BEGIN
+        SET @erp_batch_blocked_message = 'Blocked: ch_ownprod_to_wh lock conflict';
+        ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_tx_lock;
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK('lock_ch_ownProd_to_wh');
+        END IF;
+    END;
+
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_tx_lock;
         IF v_lock_ok = 1 THEN
             DO RELEASE_LOCK('lock_ch_ownProd_to_wh');
         END IF;
@@ -36,6 +49,13 @@ BEGIN
     END;
 
     SELECT GET_LOCK('lock_ch_ownProd_to_wh', 30) INTO v_lock_ok;
+
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+        SET @erp_batch_blocked_message = 'Blocked: lock_ch_ownProd_to_wh lock is already held';
+
+    END IF;
 
     IF v_lock_ok = 1 THEN
         START TRANSACTION;
@@ -71,6 +91,19 @@ BEGIN
           )
           AND t.Order_wh = 'Принято на склад'
           AND t.Order_prod = 'Изготовлено';
+
+        /* Берем row-lock по выбранным Transactions до любых изменений. Если строки заняты — выходим до следующего такта. */
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_tx_lock;
+        CREATE TEMPORARY TABLE tmp_ownprod_tx_lock (
+            id INT UNSIGNED NOT NULL PRIMARY KEY
+        );
+
+        INSERT INTO tmp_ownprod_tx_lock (id)
+        SELECT t.id
+        FROM `Transactions` t
+        INNER JOIN tmp_ownprod_to_wh_ids x ON x.id = t.id
+        ORDER BY t.id
+        FOR UPDATE NOWAIT;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_erp_minid;
         CREATE TEMPORARY TABLE tmp_ownprod_erp_minid (
@@ -123,6 +156,22 @@ BEGIN
             WHERE m.ERP_ID = t.ERP_ID
         )
         GROUP BY t.ERP_ID;
+
+        /* Берем row-lock по Main для всех ERP_ID батча до обновления Main и закрытия Transactions. */
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_main_lock;
+        CREATE TEMPORARY TABLE tmp_ownprod_main_lock (
+            ERP_ID VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY
+        );
+
+        INSERT INTO tmp_ownprod_main_lock (ERP_ID)
+        SELECT m.ERP_ID
+        FROM `Main` m
+        INNER JOIN (
+            SELECT DISTINCT ERP_ID
+            FROM tmp_ownprod_to_wh_ids
+        ) e ON e.ERP_ID COLLATE utf8mb4_unicode_ci = m.ERP_ID COLLATE utf8mb4_unicode_ci
+        ORDER BY m.ERP_ID
+        FOR UPDATE NOWAIT;
 
         /* ========== Main.Source — пусто: из Transactions.Source (первая строка батча по ERP_ID) ========== */
         UPDATE `Main` m
@@ -198,6 +247,8 @@ BEGIN
                            END;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_to_wh_pk;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_main_lock;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_tx_lock;
         DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_erp_minid;
         DROP TEMPORARY TABLE IF EXISTS tmp_ownprod_to_wh_ids;
 

@@ -66,6 +66,13 @@ BEGIN
 
   SELECT GET_LOCK('lock_move_wh_to_shopfloor', 30) INTO v_lock_ok;
 
+
+  IF COALESCE(v_lock_ok, 0) <> 1 THEN
+
+      SET @erp_batch_blocked_message = 'Blocked: lock_move_wh_to_shopfloor lock is already held';
+
+  END IF;
+
   IF v_lock_ok = 1 THEN
     OPEN cur;
 

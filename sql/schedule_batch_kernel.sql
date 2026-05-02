@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS `kernel_log` (
     `started_at` DATETIME(6) NOT NULL,
     `finished_at` DATETIME(6) NOT NULL,
     `duration_ms` DECIMAL(16,3) NOT NULL,
-    `status` ENUM('OK', 'ERROR') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'OK',
+    `status` ENUM('OK', 'ERROR', 'BLOCKED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'OK',
     `error_message` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (`id`),
@@ -38,6 +38,7 @@ BEGIN
     DECLARE v_sqlstate CHAR(5) DEFAULT NULL;
     DECLARE v_errno INT DEFAULT NULL;
     DECLARE v_error_text TEXT;
+    DECLARE v_error_status VARCHAR(16) DEFAULT 'ERROR';
     DECLARE v_notify_recipient VARCHAR(255) DEFAULT 'vpyzhyanov@vostk.su';
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -46,7 +47,7 @@ BEGIN
             v_sqlstate = RETURNED_SQLSTATE,
             v_errno = MYSQL_ERRNO,
             v_error_text = MESSAGE_TEXT;
-
+        SET v_error_status = CASE WHEN v_errno IN (1205, 1213, 3572) THEN 'BLOCKED' ELSE 'ERROR' END;
         SET v_step_finished = NOW(6);
 
         IF v_current_proc IS NOT NULL THEN
@@ -61,7 +62,7 @@ BEGIN
                 v_step_started,
                 v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3),
-                'ERROR',
+                v_error_status,
                 CONCAT('SQLSTATE=', COALESCE(v_sqlstate, ''), ', ERRNO=', COALESCE(v_errno, 0), ', MSG=', COALESCE(v_error_text, '')),
                 CURRENT_TIMESTAMP(6)
             );
@@ -79,8 +80,8 @@ BEGIN
                 v_batch_started,
                 v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_batch_started, v_step_finished) / 1000, 3),
-                'ERROR',
-                CONCAT('Batch failed at ', COALESCE(v_current_proc, 'unknown')),
+                v_error_status,
+                CONCAT(CASE WHEN v_error_status = 'BLOCKED' THEN 'Batch blocked at ' ELSE 'Batch failed at ' END, COALESCE(v_current_proc, 'unknown')),
                 CURRENT_TIMESTAMP(6)
             );
         END IF;
@@ -88,11 +89,14 @@ BEGIN
         IF v_batch_lock = 1 THEN
             DO RELEASE_LOCK('batch_kernel');
         END IF;
-        RESIGNAL;
+        IF v_error_status = 'ERROR' THEN
+            RESIGNAL;
+        END IF;
     END;
 
     SET v_run_id = UUID();
     SET v_batch_started = NOW(6);
+    SET @erp_batch_blocked_message = NULL;
     SELECT GET_LOCK('batch_kernel', 0) INTO v_batch_lock;
 
     IF v_batch_lock = 1 THEN
@@ -100,6 +104,9 @@ BEGIN
         SET v_current_proc = 'ch_merge_same_advGroup';
         SET v_step_started = NOW(6);
         CALL ch_merge_same_advGroup();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -109,6 +116,9 @@ BEGIN
         SET v_current_proc = 'ch_outside_to_ownProd';
         SET v_step_started = NOW(6);
         CALL ch_outside_to_ownProd();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -118,6 +128,9 @@ BEGIN
         SET v_current_proc = 'ch_outside_to_purch';
         SET v_step_started = NOW(6);
         CALL ch_outside_to_purch();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -127,6 +140,9 @@ BEGIN
         SET v_current_proc = 'ch_ownprod_to_wh';
         SET v_step_started = NOW(6);
         CALL ch_ownprod_to_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -136,6 +152,9 @@ BEGIN
         SET v_current_proc = 'ch_purch_to_wh';
         SET v_step_started = NOW(6);
         CALL ch_purch_to_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -145,6 +164,9 @@ BEGIN
         SET v_current_proc = 'move_kit_to_shopfloor';
         SET v_step_started = NOW(6);
         CALL move_kit_to_shopfloor();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -154,6 +176,9 @@ BEGIN
         SET v_current_proc = 'move_shop_to_fin';
         SET v_step_started = NOW(6);
         CALL move_shop_to_fin();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -163,6 +188,9 @@ BEGIN
         SET v_current_proc = 'move_shop_to_wh';
         SET v_step_started = NOW(6);
         CALL move_shop_to_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -172,6 +200,9 @@ BEGIN
         SET v_current_proc = 'return_shopfloor_to_wh';
         SET v_step_started = NOW(6);
         CALL return_shopfloor_to_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -181,6 +212,9 @@ BEGIN
         SET v_current_proc = 'return_kit_to_wh';
         SET v_step_started = NOW(6);
         CALL return_kit_to_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -190,6 +224,9 @@ BEGIN
         SET v_current_proc = 'deficit_wh';
         SET v_step_started = NOW(6);
         CALL deficit_wh();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -199,6 +236,9 @@ BEGIN
         SET v_current_proc = 'deficit_supply';
         SET v_step_started = NOW(6);
         CALL deficit_supply();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -217,6 +257,9 @@ BEGIN
         SET v_current_proc = 'return_shopfloor_to_wh_direct';
         SET v_step_started = NOW(6);
         CALL return_shopfloor_to_wh_direct();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
         SET v_step_finished = NOW(6);
         INSERT INTO `kernel_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_kernel', v_step_no, v_current_proc, v_step_started, v_step_finished,
@@ -240,6 +283,23 @@ BEGIN
         );
 
         DO RELEASE_LOCK('batch_kernel');
+    ELSE
+        SET v_batch_finished = NOW(6);
+        INSERT INTO `kernel_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_kernel',
+            9999,
+            '__batch_total__',
+            v_batch_started,
+            v_batch_finished,
+            ROUND(TIMESTAMPDIFF(MICROSECOND, v_batch_started, v_batch_finished) / 1000, 3),
+            'BLOCKED',
+            'Blocked: batch_kernel lock is already held',
+            CURRENT_TIMESTAMP(6)
+        );
     END IF;
 END$$
 

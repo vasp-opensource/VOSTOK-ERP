@@ -105,7 +105,7 @@ proc: BEGIN
       v_quantity_replaced,
       0,
       v_source_status_transaction,
-      v_source_status_warehouse,
+      'Новая',
       v_source_order_purch,
       v_source_order_wh,
       v_source_order_prod,
