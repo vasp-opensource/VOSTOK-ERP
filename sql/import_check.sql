@@ -31,6 +31,22 @@ BEGIN
     */
 
     UPDATE `Import` i
+    SET
+        i.`Quantity_of_parts_total` = CASE
+            WHEN i.`type` = 'change' THEN 0
+            ELSE i.`Quantity_of_parts_total`
+        END,
+        i.`Quantity_change` = CASE
+            WHEN i.`type` = 'move' THEN 0
+            ELSE i.`Quantity_change`
+        END
+    WHERE i.`Status_import` = 'Новая'
+      AND (
+           (i.`type` = 'change' AND COALESCE(i.`Quantity_of_parts_total`, 0) <> 0)
+        OR (i.`type` = 'move' AND COALESCE(i.`Quantity_change`, 0) <> 0)
+      );
+
+    UPDATE `Import` i
     LEFT JOIN `Main` m
       ON m.`ERP_ID` COLLATE utf8mb4_unicode_ci = i.`ERP_ID` COLLATE utf8mb4_unicode_ci
     LEFT JOIN (

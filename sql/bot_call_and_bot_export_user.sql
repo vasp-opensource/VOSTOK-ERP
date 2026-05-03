@@ -88,6 +88,8 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_purchaser(
     IN purch_purch INT,
     IN purch_byed INT,
     IN purch_manuf INT,
+    IN prod_rework INT,
+    IN purch_return INT,
     IN purch_cost BIGINT
 )
 SQL SECURITY DEFINER
@@ -155,13 +157,13 @@ BEGIN
                   AND z.`Status_transaction` = 'В ожидании'
                   AND z.`Status_warehouse` = 'Новая'
                   AND z.`Recommend_purchprod` = 'В закупку'
-                  AND (z.`Order_purch` IS NULL OR z.`Order_purch` NOT IN ('В закупке', 'Собственное производство'))
+                  AND (z.`Order_purch` IS NULL OR z.`Order_purch` NOT IN ('В закупке', 'В собственное производство'))
                 ORDER BY RAND()
                 LIMIT purch_manuf
             ) picked
         ) r ON r.id = t.id
         SET
-            t.`Order_purch` = 'Собственное производство',
+            t.`Order_purch` = 'В собственное производство',
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'purchase'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'purchase')
@@ -239,22 +241,26 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_purhaser(
     IN purch_purch INT,
     IN purch_byed INT,
     IN purch_manuf INT,
+    IN prod_rework INT,
+    IN purch_return INT,
     IN purch_cost BIGINT
 )
 SQL SECURITY DEFINER
 BEGIN
-    CALL bot_purchaser(purch_purch, purch_byed, purch_manuf, purch_cost);
+    CALL bot_purchaser(purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost);
 END$$
 
 CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_purcaser(
     IN purch_purch INT,
     IN purch_byed INT,
     IN purch_manuf INT,
+    IN prod_rework INT,
+    IN purch_return INT,
     IN purch_cost BIGINT
 )
 SQL SECURITY DEFINER
 BEGIN
-    CALL bot_purchaser(purch_purch, purch_byed, purch_manuf, purch_cost);
+    CALL bot_purchaser(purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost);
 END$$
 
 CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_shopfloor(
@@ -265,7 +271,8 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_shopfloor(
     IN prod_purch INT,
     IN prod_shipped INT,
     IN prod_loss INT,
-    IN prod_rework INT
+    IN prod_rework INT,
+    IN prod_return INT
 )
 SQL SECURITY DEFINER
 BEGIN
@@ -280,12 +287,12 @@ BEGIN
               AND z.`Status_warehouse` = 'Новая'
               AND (
                   z.`Recommend_purchprod` IS NULL
-                  OR (z.`Recommend_purchprod` = 'В закупку' AND z.`Order_purch` = 'Собственное производство')
+                  OR (z.`Recommend_purchprod` = 'В закупку' AND z.`Order_purch` = 'В собственное производство')
               )
             ORDER BY RAND()
             LIMIT prod_purch
         ) r ON r.id = t.id
-        SET t.`Order_purch` = 'Собственное производство',
+        SET t.`Order_purch` = 'В собственное производство',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -329,7 +336,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT prod_purch
         ) r ON r.id = t.id
-        SET t.`Order_purch` = 'В закупке',
+        SET t.`Order_purch` = 'В закупку',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -518,6 +525,28 @@ BEGIN
             LIMIT prod_loss
         ) r ON r.id = t.id
         SET t.`Order_prod` = 'Забраковать',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
+            t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
+            t.`updated_at` = CURRENT_TIMESTAMP;
+    END IF;
+
+    /* move: цех -> склад, вернуть на склад */
+    IF COALESCE(prod_return, 0) > 0 THEN
+        UPDATE `Transactions` t
+        INNER JOIN (
+            SELECT z.id
+            FROM `Transactions` z
+            WHERE z.`type` = 'move'
+              AND z.`Status_transaction` = 'В ожидании'
+              AND z.`where_from` = 'цех'
+              AND z.`where_to` = 'склад'
+            ORDER BY RAND()
+            LIMIT prod_return
+        ) r ON r.id = t.id
+        SET t.`Order_prod` = 'Вернуть на склад',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -831,6 +860,8 @@ BEGIN
     DECLARE purch_purch INT;
     DECLARE purch_byed INT;
     DECLARE purch_manuf INT;
+    DECLARE prod_rework INT;
+    DECLARE purch_return INT;
     DECLARE purch_cost BIGINT;
 
     DECLARE prod_kit INT;
@@ -840,7 +871,7 @@ BEGIN
     DECLARE prod_purch INT;
     DECLARE prod_shipped INT;
     DECLARE prod_loss INT;
-    DECLARE prod_rework INT;
+    DECLARE prod_return INT;
 
     DECLARE wh_purch INT;
     DECLARE wh_manuf INT;
@@ -859,9 +890,11 @@ BEGIN
     SET exp_row_count  = FLOOR(5 + RAND() * 11);
     SET exp_approve    = FLOOR(5 + RAND() * 11);
 
-    SET purch_purch    = FLOOR(1 + RAND() * 4);
-    SET purch_byed     = FLOOR(1 + RAND() * 4);
+    SET purch_purch    = FLOOR(5 + RAND() * 11);
+    SET purch_byed     = FLOOR(5 + RAND() * 11);
     SET purch_manuf    = FLOOR(RAND() * 2);
+    SET prod_rework    = FLOOR(RAND() * 2);
+    SET purch_return   = FLOOR(RAND() * 2);
     SET purch_cost     = FLOOR(5000 + RAND() * 145001);
 
     SET prod_kit       = FLOOR(5 + RAND() * 11);
@@ -871,7 +904,7 @@ BEGIN
     SET prod_purch     = FLOOR(RAND() * 2);
     SET prod_shipped   = FLOOR(RAND() * 2);
     SET prod_loss      = FLOOR(RAND() * 2);
-    SET prod_rework    = FLOOR(RAND() * 2);
+    SET prod_return    = FLOOR(RAND() * 2);
 
     SET wh_purch       = FLOOR(5 + RAND() * 11);
     SET wh_manuf       = FLOOR(5 + RAND() * 11);
@@ -894,8 +927,8 @@ BEGIN
     LIMIT 1;
 
     CALL bot_export_user(exp_row_count, exp_approve);
-    CALL bot_purhaser(purch_purch, purch_byed, purch_manuf, purch_cost);
-    CALL bot_shopfloor(prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_rework);
+    CALL bot_purhaser(purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost);
+    CALL bot_shopfloor(prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_rework, prod_return);
     CALL bot_warehouse(wh_purch, wh_manuf, wh_return, wh_kit);
     CALL bot_OTK(OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss);
     CALL bot_supervisor(sv_choice, sv_replace, replace_to);

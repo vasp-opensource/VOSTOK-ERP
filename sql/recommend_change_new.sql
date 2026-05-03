@@ -2,6 +2,7 @@
 -- Параметр: p_row_ids — JSON-массив id, например CAST('[1,2,3]' AS JSON) или JSON_ARRAY(10, 20).
 -- Рекомендация назначается по таблице recommend_rules.
 -- Логика условий: WHERE начинает группу, AND добавляет условие в группу, OR начинает альтернативную группу.
+-- project: ANY = все проекты; ANY BUT 0011, 0012 = все проекты, кроме 0011 и 0012; иначе CSV-список проектов.
 -- Требуется: create_table_recommend_rules.sql; в Recommend_purchprod доступны значения «В закупку», «В собственное производство».
 -- MySQL 8+ (JSON_TABLE).
 
@@ -129,7 +130,19 @@ BEGIN
       FROM `Transactions` t
       INNER JOIN `tmp_recommend_change_new_ids` i ON i.id = t.id
       INNER JOIN `tmp_recommend_change_new_rules` rr
-        ON rr.`project` COLLATE utf8mb4_unicode_ci = 'ANY' COLLATE utf8mb4_unicode_ci
+        ON TRIM(CAST(rr.`project` AS CHAR CHARACTER SET utf8mb4)) COLLATE utf8mb4_unicode_ci = 'ANY' COLLATE utf8mb4_unicode_ci
+        OR (
+          UPPER(TRIM(CAST(rr.`project` AS CHAR CHARACTER SET utf8mb4))) COLLATE utf8mb4_unicode_ci
+            LIKE 'ANY BUT %' COLLATE utf8mb4_unicode_ci
+          AND FIND_IN_SET(
+                TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
+                REPLACE(
+                  TRIM(SUBSTRING(TRIM(CAST(rr.`project` AS CHAR CHARACTER SET utf8mb4)), 8)),
+                  ', ',
+                  ','
+                ) COLLATE utf8mb4_unicode_ci
+              ) = 0
+        )
         OR FIND_IN_SET(
              TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
              REPLACE(CAST(rr.`project` AS CHAR CHARACTER SET utf8mb4), ', ', ',') COLLATE utf8mb4_unicode_ci
