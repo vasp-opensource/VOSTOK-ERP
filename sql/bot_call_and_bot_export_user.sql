@@ -1,5 +1,6 @@
 ﻿-- Набор процедур bot_* для имитации действий пользователей.
 -- bot_call генерирует случайные лимиты сценариев и вызывает export/purchase/shopfloor/warehouse/OTK/supervisor.
+-- export: exp_row_count = [5..15], exp_approve = [10..20].
 -- purch_cost в bot_call: FLOOR(5000 + RAND() * 145001) → целое [5000..150000].
 
 DELIMITER $$
@@ -14,7 +15,7 @@ DROP PROCEDURE IF EXISTS bot_warehouse$$
 DROP PROCEDURE IF EXISTS bot_OTK$$
 DROP PROCEDURE IF EXISTS bot_supervisor$$
 
-CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_export_user(
+CREATE DEFINER=`export`@`%` PROCEDURE bot_export_user(
     IN exp_row_count INT,
     IN exp_approve INT
 )
@@ -22,15 +23,20 @@ SQL SECURITY DEFINER
 BEGIN
     DECLARE v_record_count BIGINT DEFAULT 0;
 
-    /* 1) Случайные "Новая" в Import -> "Выполнить" */
+    /* 1) Подтвердить случайные новые строки импорта с готовой рекомендацией. */
     IF COALESCE(exp_approve, 0) > 0 THEN
         UPDATE `Import` i
         INNER JOIN (
-            SELECT z.`id`
-            FROM `Import` z
-            WHERE z.`Status_import` = 'Новая'
-            ORDER BY RAND()
-            LIMIT exp_approve
+            SELECT picked.`id`
+            FROM (
+                SELECT z.`id`
+                FROM `Import` z
+                WHERE z.`Status_import` = 'Новая'
+                  AND z.`Suggestion` IN ('Импортировать', 'Отменить', 'Заменить')
+                  AND (z.`Order_import` IS NULL OR z.`Order_import` <> 'Выполнить')
+                ORDER BY RAND()
+                LIMIT exp_approve
+            ) picked
         ) r ON r.`id` = i.`id`
         SET
             i.`Order_import` = 'Выполнить',
@@ -45,7 +51,7 @@ BEGIN
     SELECT COUNT(*) INTO v_record_count
     FROM `Record_source`;
 
-    /* 3) Случайные строки Record_source -> Import */
+    /* 3) Случайные строки из всего Record_source -> Import */
     IF v_record_count > 0 AND COALESCE(exp_row_count, 0) > 0 THEN
         INSERT INTO `Import` (
             `ERP_ID`, `created_at`, `updated_at`, `created_by`, `updated_by`,
@@ -83,6 +89,9 @@ BEGIN
         LIMIT exp_row_count;
     END IF;
 END$$
+
+GRANT EXECUTE ON PROCEDURE `VOSTOK_ERP`.`bot_export_user` TO 'export'@'%'$$
+GRANT EXECUTE ON PROCEDURE `VOSTOK_ERP`.`bot_export_user` TO 'bot_ERP'@'%'$$
 
 CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_purchaser(
     IN purch_purch INT,
@@ -157,13 +166,13 @@ BEGIN
                   AND z.`Status_transaction` = 'В ожидании'
                   AND z.`Status_warehouse` = 'Новая'
                   AND z.`Recommend_purchprod` = 'В закупку'
-                  AND (z.`Order_purch` IS NULL OR z.`Order_purch` NOT IN ('В закупке', 'В собственное производство'))
+                  AND (z.`Order_purch` IS NULL OR z.`Order_purch` NOT IN ('В закупке', 'Собственное производство'))
                 ORDER BY RAND()
                 LIMIT purch_manuf
             ) picked
         ) r ON r.id = t.id
         SET
-            t.`Order_purch` = 'В собственное производство',
+            t.`Order_purch` = 'Собственное производство',
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'purchase'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'purchase')
@@ -212,21 +221,37 @@ BEGIN
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
 
-    /* Оплачено + стоимость */
+    /* Оплачено + стоимость + случайный документ */
     IF COALESCE(purch_byed, 0) > 0 THEN
         UPDATE `Transactions` t
         INNER JOIN (
-            SELECT z.id
-            FROM `Transactions` z
-            WHERE z.`type` = 'change'
-              AND z.`Status_transaction` = 'В ожидании'
-              AND z.`Status_warehouse` = 'В закупке'
-            ORDER BY RAND()
-            LIMIT purch_byed
+            SELECT
+                picked.id,
+                doc.`id` AS Document_id,
+                doc.`Document_no`,
+                doc.`Document_date`
+            FROM (
+                SELECT z.id
+                FROM `Transactions` z
+                WHERE z.`type` = 'change'
+                  AND z.`Status_transaction` = 'В ожидании'
+                  AND z.`Status_warehouse` = 'В закупке'
+                ORDER BY RAND()
+                LIMIT purch_byed
+            ) picked
+            INNER JOIN `Documents` doc ON doc.`id` = (
+                SELECT d.`id`
+                FROM `Documents` d
+                ORDER BY RAND()
+                LIMIT 1
+            )
         ) r ON r.id = t.id
         SET
             t.`Order_purch` = 'Оплачено',
             t.`Cost_total_rub` = purch_cost,
+            t.`Document_id` = r.`Document_id`,
+            t.`Document_no` = r.`Document_no`,
+            t.`Document_date` = r.`Document_date`,
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'purchase'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'purchase')
@@ -287,12 +312,12 @@ BEGIN
               AND z.`Status_warehouse` = 'Новая'
               AND (
                   z.`Recommend_purchprod` IS NULL
-                  OR (z.`Recommend_purchprod` = 'В закупку' AND z.`Order_purch` = 'В собственное производство')
+                  OR (z.`Recommend_purchprod` = 'В закупку' AND z.`Order_purch` = 'Собственное производство')
               )
             ORDER BY RAND()
             LIMIT prod_purch
         ) r ON r.id = t.id
-        SET t.`Order_purch` = 'В собственное производство',
+        SET t.`Order_purch` = 'Собственное производство',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -336,7 +361,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT prod_purch
         ) r ON r.id = t.id
-        SET t.`Order_purch` = 'В закупку',
+        SET t.`Order_purch` = 'В закупке',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -888,7 +913,7 @@ BEGIN
     DECLARE replace_to VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
     SET exp_row_count  = FLOOR(5 + RAND() * 11);
-    SET exp_approve    = FLOOR(5 + RAND() * 11);
+    SET exp_approve    = FLOOR(10 + RAND() * 11);
 
     SET purch_purch    = FLOOR(5 + RAND() * 11);
     SET purch_byed     = FLOOR(5 + RAND() * 11);
