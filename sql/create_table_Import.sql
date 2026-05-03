@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS `Import` (
     `Needed_new` bigint NOT NULL DEFAULT 0,
     `Cant_be_cancelled` bigint NOT NULL DEFAULT 0,
     `Suggestion` enum('Импортировать','Заменить','Отменить','') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-    `Order_import` enum('Ожидание','Импортировать','Отменить') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Ожидание',
+    `Order_import` enum('Ожидание','Импортировать','Отменить','Выполнить') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Ожидание',
     `Status_import` enum('Новая','Импортировано','Заменено','Отменено') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Новая',
 
     `Project` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,

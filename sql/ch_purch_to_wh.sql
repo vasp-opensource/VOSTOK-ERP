@@ -4,6 +4,7 @@
 -- Требования к БД: колонки Main.Source, Transactions.Source (sql/alter_Main_Source.sql, alter_transactions_Source.sql).
 -- Значение «Разные» в Source не используется: в Main копируются только «Покупное» / «Собственное производство»;
 -- при расхождении с Main строка Transactions не перезаписывается на «Разные».
+-- Приёмка на склад выполняется только по строкам с заполненными Document_no и Document_date.
 --
 -- Source:
 --   1) INSERT Main — если карточки по ERP_ID ещё нет;
@@ -69,6 +70,9 @@ BEGIN
           AND t.where_to = 'склад'
           AND t.Order_wh = 'Принято на склад'
           AND t.Order_purch = 'Оплачено'
+          AND t.Document_no IS NOT NULL
+          AND TRIM(COALESCE(t.Document_no, '')) <> ''
+          AND t.Document_date IS NOT NULL
           AND t.Cost_total_rub IS NOT NULL
           AND t.Cost_total_rub > 0
           AND COALESCE(t.Quantity_change, 0) > 0;

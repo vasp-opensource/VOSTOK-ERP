@@ -1,4 +1,4 @@
--- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Advanced_group + Status_warehouse,
+-- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Project + Advanced_group + Status_warehouse,
 -- сумма Quantity_change; только Status_warehouse «В закупке» или «В изготовлении», Status_transaction «В ожидании».
 -- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма»; id суммарной строки дописывается в linked_transaction через "; ".
 -- Новая строка: id суммарной дописывается в linked_transaction; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
@@ -14,6 +14,7 @@ BEGIN
     DECLARE v_lock_ok INT DEFAULT 0;
     DECLARE v_merge_left INT DEFAULT 0;
     DECLARE v_erp_id VARCHAR(255);
+    DECLARE v_project_key TEXT;
     DECLARE v_ag_key TEXT;
     DECLARE v_wh VARCHAR(64);
     DECLARE v_new_id BIGINT UNSIGNED;
@@ -43,15 +44,17 @@ BEGIN
         CREATE TEMPORARY TABLE tmp_ch_merge_ids (
             `id` INT UNSIGNED PRIMARY KEY,
             `ERP_ID` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `Project` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
             `Advanced_group` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
             `Status_warehouse` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
             `Quantity_change` BIGINT NOT NULL
         );
 
-        INSERT INTO tmp_ch_merge_ids (`id`, `ERP_ID`, `Advanced_group`, `Status_warehouse`, `Quantity_change`)
+        INSERT INTO tmp_ch_merge_ids (`id`, `ERP_ID`, `Project`, `Advanced_group`, `Status_warehouse`, `Quantity_change`)
         SELECT
             t.`id`,
             CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
+            CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
             CAST(t.`Advanced_group` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
             CAST(t.`Status_warehouse` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci,
             COALESCE(t.`Quantity_change`, 0)
@@ -67,6 +70,8 @@ BEGIN
               SELECT 1
               FROM `Transactions` t2
               WHERE t2.`ERP_ID` COLLATE utf8mb4_unicode_ci = t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                AND COALESCE(NULLIF(TRIM(t2.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
+                    = COALESCE(NULLIF(TRIM(t.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
                 AND COALESCE(NULLIF(TRIM(t2.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
                     = COALESCE(NULLIF(TRIM(t.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
                 AND t2.`Status_warehouse` COLLATE utf8mb4_unicode_ci = t.`Status_warehouse` COLLATE utf8mb4_unicode_ci
@@ -84,6 +89,7 @@ BEGIN
         CREATE TEMPORARY TABLE tmp_ch_merge_agg AS
         SELECT
             x.`ERP_ID` COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
+            COALESCE(NULLIF(TRIM(x.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `project_key`,
             COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `ag_key`,
             x.`Status_warehouse` COLLATE utf8mb4_unicode_ci AS `Status_warehouse`,
             COUNT(*) AS `cnt`,
@@ -91,6 +97,7 @@ BEGIN
         FROM tmp_ch_merge_ids x
         INNER JOIN `Transactions` t ON t.`id` = x.`id`
         GROUP BY x.`ERP_ID` COLLATE utf8mb4_unicode_ci,
+                 COALESCE(NULLIF(TRIM(x.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci),
                  COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci),
                  x.`Status_warehouse` COLLATE utf8mb4_unicode_ci
         HAVING `cnt` >= 2;
@@ -99,12 +106,13 @@ BEGIN
         CREATE TEMPORARY TABLE tmp_ch_merge_replace_queue (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             `ERP_ID` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `project_key` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
             `ag_key` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
             `Status_warehouse` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL
         );
 
-        INSERT INTO tmp_ch_merge_replace_queue (`ERP_ID`, `ag_key`, `Status_warehouse`)
-        SELECT `ERP_ID`, `ag_key`, `Status_warehouse` FROM tmp_ch_merge_agg;
+        INSERT INTO tmp_ch_merge_replace_queue (`ERP_ID`, `project_key`, `ag_key`, `Status_warehouse`)
+        SELECT `ERP_ID`, `project_key`, `ag_key`, `Status_warehouse` FROM tmp_ch_merge_agg;
 
         replace_loop: LOOP
             SELECT COUNT(*) INTO v_merge_left FROM tmp_ch_merge_replace_queue;
@@ -112,8 +120,8 @@ BEGIN
                 LEAVE replace_loop;
             END IF;
 
-            SELECT `ERP_ID`, `ag_key`, `Status_warehouse`
-              INTO v_erp_id, v_ag_key, v_wh
+            SELECT `ERP_ID`, `project_key`, `ag_key`, `Status_warehouse`
+              INTO v_erp_id, v_project_key, v_ag_key, v_wh
             FROM tmp_ch_merge_replace_queue
             ORDER BY `id`
             LIMIT 1;
@@ -176,6 +184,7 @@ BEGIN
             INNER JOIN (
                 SELECT
                     q.`ERP_ID`,
+                    q.`project_key`,
                     q.`ag_key`,
                     q.`Status_warehouse`,
                     MIN(q.`Project`) AS `Project`,
@@ -229,6 +238,7 @@ BEGIN
                 FROM (
                     SELECT
                         CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `ERP_ID`,
+                        COALESCE(NULLIF(TRIM(t.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `project_key`,
                         COALESCE(NULLIF(TRIM(t.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci) AS `ag_key`,
                         CAST(t.`Status_warehouse` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS `Status_warehouse`,
                         t.`Project`, t.`Target_assembly`, t.`Supplied_component_number`, t.`Component_revision`, t.`Component_name`,
@@ -244,13 +254,15 @@ BEGIN
                     FROM `Transactions` t
                     INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
                 ) q
-                GROUP BY q.`ERP_ID`, q.`ag_key`, q.`Status_warehouse`
+                GROUP BY q.`ERP_ID`, q.`project_key`, q.`ag_key`, q.`Status_warehouse`
             ) fld
               ON fld.`ERP_ID` COLLATE utf8mb4_unicode_ci = g.`ERP_ID` COLLATE utf8mb4_unicode_ci
+             AND fld.`project_key` COLLATE utf8mb4_unicode_ci = g.`project_key` COLLATE utf8mb4_unicode_ci
              AND fld.`ag_key` COLLATE utf8mb4_unicode_ci = g.`ag_key` COLLATE utf8mb4_unicode_ci
              AND fld.`Status_warehouse` COLLATE utf8mb4_unicode_ci = g.`Status_warehouse` COLLATE utf8mb4_unicode_ci
             WHERE g.`cnt` >= 2
               AND g.`ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND g.`project_key` COLLATE utf8mb4_unicode_ci = v_project_key COLLATE utf8mb4_unicode_ci
               AND g.`ag_key` COLLATE utf8mb4_unicode_ci = v_ag_key COLLATE utf8mb4_unicode_ci
               AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
 
@@ -273,6 +285,7 @@ BEGIN
             INNER JOIN tmp_ch_merge_ids x ON x.`id` = t.`id`
             INNER JOIN tmp_ch_merge_agg g
               ON g.`ERP_ID` COLLATE utf8mb4_unicode_ci = x.`ERP_ID` COLLATE utf8mb4_unicode_ci
+             AND g.`project_key` COLLATE utf8mb4_unicode_ci = COALESCE(NULLIF(TRIM(x.`Project` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
              AND g.`ag_key` COLLATE utf8mb4_unicode_ci = COALESCE(NULLIF(TRIM(x.`Advanced_group` COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci), '' COLLATE utf8mb4_unicode_ci)
              AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = x.`Status_warehouse` COLLATE utf8mb4_unicode_ci
             SET
@@ -289,11 +302,13 @@ BEGIN
                                          END
             WHERE g.`cnt` >= 2
               AND g.`ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND g.`project_key` COLLATE utf8mb4_unicode_ci = v_project_key COLLATE utf8mb4_unicode_ci
               AND g.`ag_key` COLLATE utf8mb4_unicode_ci = v_ag_key COLLATE utf8mb4_unicode_ci
               AND g.`Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
 
             DELETE FROM tmp_ch_merge_replace_queue
             WHERE `ERP_ID` COLLATE utf8mb4_unicode_ci = v_erp_id COLLATE utf8mb4_unicode_ci
+              AND `project_key` COLLATE utf8mb4_unicode_ci <=> v_project_key COLLATE utf8mb4_unicode_ci
               AND `ag_key` COLLATE utf8mb4_unicode_ci <=> v_ag_key COLLATE utf8mb4_unicode_ci
               AND `Status_warehouse` COLLATE utf8mb4_unicode_ci = v_wh COLLATE utf8mb4_unicode_ci;
         END LOOP replace_loop;
