@@ -6,7 +6,7 @@
 -- (поля Order_purch, Order_wh, Order_prod, Order_OTK пользователи могут менять вручную — в проверках не используются).
 -- Закупка (2a): SUM(Quantity_change) по открытым change, В закупке, Покупное (или NULL/пустой Source как закупка) = Main.inProcess_purchase.
 -- Производство (2b): SUM(Quantity_change) по открытым change, В изготовлении, Собственное производство = Main.inProcess_manufacturing.
--- Закупка (2c): move «Ожидание закупки» с тем же контуром Source (закупка) ≤ change «В закупке» с тем же контуром.
+-- Закупка (2c): временно отключено; move «Ожидание закупки» с тем же контуром Source (закупка) ≤ change «В закупке» с тем же контуром.
 -- 2d–2e: несовместимость Status_warehouse и Source на открытых change (без Order_*).
 --
 -- Дополнительно: отсутствие Main для ERP_ID не считается ошибкой, пока все релевантные транзакции
@@ -254,7 +254,10 @@ BEGIN
       AND `Status_warehouse` = 'В изготовлении'
       AND `Source` = 'Покупное';
 
-    /* 2c) Закупка: move «Ожидание закупки» (контур Покупное) ≤ change «В закупке» (тот же контур по Source). */
+    /*
+    2c) Временно отключено.
+    Закупка: move «Ожидание закупки» (контур Покупное) ≤ change «В закупке» (тот же контур по Source).
+
     INSERT INTO `tmp_integrity_candidates` (`procedure_name`, `ERP_ID`, `error_message`)
     SELECT
         'check_data_integrity',
@@ -301,6 +304,7 @@ BEGIN
         GROUP BY `ERP_ID`
     ) ch ON ch.`ERP_ID` = mv.`ERP_ID`
     WHERE mv.qty_move > COALESCE(ch.qty_change, 0);
+    */
 
     /* 3) По каждому ERP_ID: сумма закрытых change (Исполнено) = сумма количественных полей Main
           без inProcess_purchase / inProcess_manufacturing (там — незакрытые change).

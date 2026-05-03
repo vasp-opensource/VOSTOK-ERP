@@ -1,0 +1,13 @@
+---
+description: GitHub workflow for protected main branch
+alwaysApply: true
+---
+
+# GitHub PR Workflow
+
+- Do not push changes directly to `main` unless the user explicitly asks for a direct push.
+- For code, SQL, config, documentation, and release changes, create a task branch first.
+- Commit changes on the task branch and push it to GitHub with upstream tracking.
+- Create a Pull Request from the task branch into `main`.
+- Treat `main` as protected: merges should normally happen through GitHub PR review/merge flow.
+- If the user asks to publish a release, first ensure the release commit is already on `main` through the PR flow, unless they explicitly approve a direct `main` update.

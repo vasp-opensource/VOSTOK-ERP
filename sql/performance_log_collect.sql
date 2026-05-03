@@ -36,10 +36,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `kernel_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -54,10 +60,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `import_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -72,10 +84,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `integrity_batch_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -90,10 +108,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `import_check_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -108,10 +132,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `recommend_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -126,10 +156,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `supervisor_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -144,10 +180,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `assembly_batches_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -162,10 +204,16 @@ BEGIN
         MAX(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `created_at` SEPARATOR '; ')
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `created_at` SEPARATOR '; ')
+            ELSE NULL
+        END
     FROM `bot_call_log`
     WHERE `procedure_name` = '__batch_total__'
       AND `created_at` >= NOW(6) - INTERVAL 2 MINUTE
@@ -219,10 +267,16 @@ BEGIN
         SUM(`duration_ms`),
         CASE
             WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0 THEN 'ERROR'
-            WHEN SUM(CASE WHEN `status` = 'BLOCKED' THEN 1 ELSE 0 END) > 0 THEN 'BLOCKED'
-            ELSE 'OK'
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) > 0 THEN 'OK'
+            ELSE 'BLOCKED'
         END,
-        GROUP_CONCAT(NULLIF(TRIM(COALESCE(`error_message`, '')), '') ORDER BY `step_no` SEPARATOR '; '),
+        CASE
+            WHEN SUM(CASE WHEN `status` = 'ERROR' THEN 1 ELSE 0 END) > 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'ERROR' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `step_no` SEPARATOR '; ')
+            WHEN SUM(CASE WHEN `status` = 'OK' THEN 1 ELSE 0 END) = 0
+                THEN GROUP_CONCAT(CASE WHEN `status` = 'BLOCKED' THEN NULLIF(TRIM(COALESCE(`error_message`, '')), '') END ORDER BY `step_no` SEPARATOR '; ')
+            ELSE NULL
+        END,
         v_created_at
     FROM tmp_performance_log_collect
     HAVING COUNT(*) > 0;

@@ -1,5 +1,5 @@
 ---
-description: Always return full procedure text without DELIMITER
+description: SQL procedure response format and DELIMITER convention
 alwaysApply: true
 ---
 
@@ -7,8 +7,10 @@ alwaysApply: true
 
 When a SQL stored procedure is edited or fixed:
 
-- Return the full, updated procedure text in the response.
-- Do not include `DELIMITER` lines.
-- Use plain SQL starting from `DROP PROCEDURE IF EXISTS ...;` and `CREATE PROCEDURE ...`.
+- Do not return the full procedure text in chat unless the user explicitly asks for it.
+- In the final response, provide the procedure file path as plain text.
+- In repository files and generated procedure scripts, include `DELIMITER $$` before `DROP PROCEDURE IF EXISTS ...`.
+- Use `DROP PROCEDURE IF EXISTS procedure_name$$` in procedure scripts.
+- End stored procedure scripts with `END$$`, then restore `DELIMITER ;`.
 - Keep the procedure body exactly as in the repository after edits.
 

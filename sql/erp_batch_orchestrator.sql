@@ -1,6 +1,12 @@
 -- erp_batch_orchestrator: очередь батчей и worker-events для управляемого параллельного запуска.
--- Core-последовательность: batch_import -> batch_recommend -> batch_supervisor -> batch_integrity_check -> batch_kernel.
--- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel.
+-- Core-последовательность обычного цикла: batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_performance_log.
+-- Heavy-цикл раз в 3 минуты: batch_import -> batch_assembly_batches.
+-- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
+-- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel; сейчас service-задачи в обычный цикл не добавляются.
+-- batch_kernel стартует только после завершения service-батчей текущего цикла.
+-- batch_performance_log запускается в конце цикла, когда batch-логи уже заполнены.
+-- Цикл с running-задачей старше 5 минут считается зависшим и освобождает очередь.
+-- batch_bot_call не входит в очередь оркестратора: бот выполняется отдельным таймером и не блокирует kernel.
 
 DROP EVENT IF EXISTS ev_erp_run_batch;
 DROP EVENT IF EXISTS ev_batch_import_27s;
@@ -14,6 +20,7 @@ DROP EVENT IF EXISTS ev_batch_performance_log_2m;
 DROP EVENT IF EXISTS ev_batch_bot_call_53s;
 
 DROP EVENT IF EXISTS ev_erp_enqueue_cycle_5s;
+DROP EVENT IF EXISTS ev_erp_enqueue_heavy_cycle_3m;
 DROP EVENT IF EXISTS ev_erp_worker_1_5s;
 DROP EVENT IF EXISTS ev_erp_worker_2_5s;
 DROP EVENT IF EXISTS ev_erp_worker_3_5s;
@@ -60,6 +67,7 @@ CREATE TABLE IF NOT EXISTS `erp_batch_orchestrator_log` (
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS erp_enqueue_cycle$$
+DROP PROCEDURE IF EXISTS erp_enqueue_heavy_cycle$$
 
 CREATE PROCEDURE erp_enqueue_cycle()
 proc: BEGIN
@@ -80,6 +88,165 @@ proc: BEGIN
         LEAVE proc;
     END IF;
 
+    DELETE FROM `erp_batch_queue`
+    WHERE `status` IN ('done', 'failed')
+      AND `updated_at` < NOW(6) - INTERVAL 3 DAY;
+
+    INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
+    SELECT DISTINCT
+        stale.`cycle_id`,
+        'FAILED',
+        'Recovered: stale ERP batch cycle before enqueue'
+    FROM `erp_batch_queue` stale
+    WHERE stale.`status` = 'running'
+      AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE;
+
+    UPDATE `erp_batch_queue`
+    SET
+        `status` = 'failed',
+        `finished_at` = NOW(6),
+        `error_message` = 'Recovered: stale ERP batch cycle before enqueue'
+    WHERE `cycle_id` IN (
+        SELECT stale_cycles.`cycle_id`
+        FROM (
+            SELECT DISTINCT stale.`cycle_id`
+            FROM `erp_batch_queue` stale
+            WHERE stale.`status` = 'running'
+              AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE
+        ) stale_cycles
+    )
+      AND `status` IN ('pending', 'running');
+
+    UPDATE `erp_batch_queue`
+    SET
+        `status` = 'failed',
+        `finished_at` = NOW(6),
+        `error_message` = 'Recovered: stale running job before enqueue'
+    WHERE `status` = 'running'
+      AND `started_at` < NOW(6) - INTERVAL 30 MINUTE;
+
+    UPDATE `erp_batch_queue` q
+    INNER JOIN `erp_batch_queue` failed_core
+      ON failed_core.`cycle_id` = q.`cycle_id`
+     AND failed_core.`batch_group` = 'core'
+     AND failed_core.`status` = 'failed'
+     AND failed_core.`sequence_no` < q.`sequence_no`
+    SET
+        q.`status` = 'failed',
+        q.`finished_at` = NOW(6),
+        q.`error_message` = CONCAT('Skipped: previous core batch failed: ', failed_core.`batch_name`)
+    WHERE q.`batch_group` = 'core'
+      AND q.`status` = 'pending';
+
+    IF EXISTS (
+        SELECT 1
+        FROM `erp_batch_queue`
+        WHERE `status` IN ('pending', 'running')
+        LIMIT 1
+    ) THEN
+        DO RELEASE_LOCK('erp_enqueue_cycle');
+        LEAVE proc;
+    END IF;
+
+    SET v_cycle_id = UUID();
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM `erp_batch_orchestrator_log`
+        WHERE `status` = 'ENQUEUED'
+          AND `message` = 'Created ERP heavy batch cycle'
+          AND `created_at` >= NOW(6) - INTERVAL 3 MINUTE
+        LIMIT 1
+    ) THEN
+        INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
+        VALUES
+            (v_cycle_id, 'batch_import', 'core', 10, 10),
+            (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
+
+        INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
+        VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
+
+        DO RELEASE_LOCK('erp_enqueue_cycle');
+        LEAVE proc;
+    END IF;
+
+    INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
+    VALUES
+        (v_cycle_id, 'batch_recommend', 'core', 20, 20),
+        (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
+        (v_cycle_id, 'batch_import_check', 'core', 35, 35),
+        (v_cycle_id, 'batch_integrity_check', 'core', 40, 40),
+        (v_cycle_id, 'batch_pause_20s', 'core', 45, 45),
+        (v_cycle_id, 'batch_kernel', 'core', 50, 50),
+        (v_cycle_id, 'batch_performance_log', 'core', 60, 60);
+
+    INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
+    VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP batch cycle');
+
+    DO RELEASE_LOCK('erp_enqueue_cycle');
+END$$
+
+CREATE PROCEDURE erp_enqueue_heavy_cycle()
+proc: BEGIN
+    DECLARE v_lock_ok INT DEFAULT 0;
+    DECLARE v_cycle_id CHAR(36) DEFAULT NULL;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK('erp_enqueue_cycle');
+        END IF;
+        RESIGNAL;
+    END;
+
+    SELECT GET_LOCK('erp_enqueue_cycle', 0) INTO v_lock_ok;
+
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+        LEAVE proc;
+    END IF;
+
+    DELETE FROM `erp_batch_queue`
+    WHERE `status` IN ('done', 'failed')
+      AND `updated_at` < NOW(6) - INTERVAL 3 DAY;
+
+    INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
+    SELECT DISTINCT
+        stale.`cycle_id`,
+        'FAILED',
+        'Recovered: stale ERP batch cycle before heavy enqueue'
+    FROM `erp_batch_queue` stale
+    WHERE stale.`status` = 'running'
+      AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE;
+
+    UPDATE `erp_batch_queue`
+    SET
+        `status` = 'failed',
+        `finished_at` = NOW(6),
+        `error_message` = 'Recovered: stale ERP batch cycle before heavy enqueue'
+    WHERE `cycle_id` IN (
+        SELECT stale_cycles.`cycle_id`
+        FROM (
+            SELECT DISTINCT stale.`cycle_id`
+            FROM `erp_batch_queue` stale
+            WHERE stale.`status` = 'running'
+              AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE
+        ) stale_cycles
+    )
+      AND `status` IN ('pending', 'running');
+
+    UPDATE `erp_batch_queue` q
+    INNER JOIN `erp_batch_queue` failed_core
+      ON failed_core.`cycle_id` = q.`cycle_id`
+     AND failed_core.`batch_group` = 'core'
+     AND failed_core.`status` = 'failed'
+     AND failed_core.`sequence_no` < q.`sequence_no`
+    SET
+        q.`status` = 'failed',
+        q.`finished_at` = NOW(6),
+        q.`error_message` = CONCAT('Skipped: previous core batch failed: ', failed_core.`batch_name`)
+    WHERE q.`batch_group` = 'core'
+      AND q.`status` = 'pending';
+
     IF EXISTS (
         SELECT 1
         FROM `erp_batch_queue`
@@ -95,17 +262,10 @@ proc: BEGIN
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
         (v_cycle_id, 'batch_import', 'core', 10, 10),
-        (v_cycle_id, 'batch_recommend', 'core', 20, 20),
-        (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
-        (v_cycle_id, 'batch_integrity_check', 'core', 40, 40),
-        (v_cycle_id, 'batch_kernel', 'core', 50, 50),
-        (v_cycle_id, 'batch_import_check', 'service', NULL, 100),
-        (v_cycle_id, 'batch_assembly_batches', 'service', NULL, 110),
-        (v_cycle_id, 'batch_performance_log', 'service', NULL, 120),
-        (v_cycle_id, 'batch_bot_call', 'service', NULL, 130);
+        (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
 
     INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
-    VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP batch cycle');
+    VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
 
     DO RELEASE_LOCK('erp_enqueue_cycle');
 END$$
@@ -125,9 +285,6 @@ proc: BEGIN
     DECLARE v_sqlstate CHAR(5) DEFAULT NULL;
     DECLARE v_errno INT DEFAULT NULL;
     DECLARE v_error_text TEXT DEFAULT NULL;
-
-    DECLARE CONTINUE HANDLER FOR NOT FOUND
-        SET v_job_id = NULL;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -186,66 +343,122 @@ proc: BEGIN
         LEAVE proc;
     END IF;
 
-    SELECT
-        q.`id`,
-        q.`cycle_id`,
-        q.`batch_name`
-    INTO
-        v_job_id,
-        v_cycle_id,
-        v_batch_name
-    FROM `erp_batch_queue` q
-    WHERE q.`status` = 'pending'
-      AND (
-          (
-              q.`batch_group` = 'service'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM `erp_batch_queue` k
-                  WHERE k.`status` = 'running'
-                    AND k.`batch_name` = 'batch_kernel'
-              )
-          )
-          OR
-          (
-              q.`batch_group` = 'core'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM `erp_batch_queue` p
-                  WHERE p.`cycle_id` = q.`cycle_id`
-                    AND p.`batch_group` = 'core'
-                    AND p.`sequence_no` < q.`sequence_no`
-                    AND p.`status` <> 'done'
-              )
-              AND (
-                  q.`batch_name` <> 'batch_kernel'
-                  OR NOT EXISTS (
-                      SELECT 1
-                      FROM `erp_batch_queue` r
-                      WHERE r.`status` = 'running'
-                  )
-              )
-              AND (
-                  q.`batch_name` = 'batch_kernel'
-                  OR NOT EXISTS (
+    INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
+    SELECT DISTINCT
+        stale.`cycle_id`,
+        'FAILED',
+        CONCAT('Recovered: stale ERP batch cycle before worker pick by ', p_worker_name)
+    FROM `erp_batch_queue` stale
+    WHERE stale.`status` = 'running'
+      AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE;
+
+    UPDATE `erp_batch_queue`
+    SET
+        `status` = 'failed',
+        `finished_at` = NOW(6),
+        `error_message` = CONCAT('Recovered: stale ERP batch cycle before worker pick by ', p_worker_name)
+    WHERE `cycle_id` IN (
+        SELECT stale_cycles.`cycle_id`
+        FROM (
+            SELECT DISTINCT stale.`cycle_id`
+            FROM `erp_batch_queue` stale
+            WHERE stale.`status` = 'running'
+              AND stale.`started_at` < NOW(6) - INTERVAL 5 MINUTE
+        ) stale_cycles
+    )
+      AND `status` IN ('pending', 'running');
+
+    UPDATE `erp_batch_queue` q
+    INNER JOIN `erp_batch_queue` failed_core
+      ON failed_core.`cycle_id` = q.`cycle_id`
+     AND failed_core.`batch_group` = 'core'
+     AND failed_core.`status` = 'failed'
+     AND failed_core.`sequence_no` < q.`sequence_no`
+    SET
+        q.`status` = 'failed',
+        q.`finished_at` = NOW(6),
+        q.`error_message` = CONCAT('Skipped: previous core batch failed: ', failed_core.`batch_name`)
+    WHERE q.`batch_group` = 'core'
+      AND q.`status` = 'pending';
+
+    SET v_job_id = NULL;
+    SET v_cycle_id = NULL;
+    SET v_batch_name = NULL;
+
+    SET v_job_id = (
+        SELECT q.`id`
+        FROM `erp_batch_queue` q
+        WHERE q.`status` = 'pending'
+          AND (
+              (
+                  q.`batch_group` = 'service'
+                  AND NOT EXISTS (
                       SELECT 1
                       FROM `erp_batch_queue` k
                       WHERE k.`status` = 'running'
                         AND k.`batch_name` = 'batch_kernel'
                   )
               )
+              OR
+              (
+                  q.`batch_group` = 'core'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM `erp_batch_queue` p
+                      WHERE p.`cycle_id` = q.`cycle_id`
+                        AND p.`batch_group` = 'core'
+                        AND p.`sequence_no` < q.`sequence_no`
+                        AND p.`status` <> 'done'
+                  )
+                  AND (
+                      q.`batch_name` <> 'batch_kernel'
+                      OR NOT EXISTS (
+                          SELECT 1
+                          FROM `erp_batch_queue` r
+                          WHERE r.`status` = 'running'
+                      )
+                  )
+                  AND (
+                      q.`batch_name` <> 'batch_kernel'
+                      OR NOT EXISTS (
+                          SELECT 1
+                          FROM `erp_batch_queue` s
+                          WHERE s.`cycle_id` = q.`cycle_id`
+                            AND s.`batch_group` = 'service'
+                            AND s.`status` IN ('pending', 'running')
+                      )
+                  )
+                  AND (
+                      q.`batch_name` = 'batch_kernel'
+                      OR NOT EXISTS (
+                          SELECT 1
+                          FROM `erp_batch_queue` k
+                          WHERE k.`status` = 'running'
+                            AND k.`batch_name` = 'batch_kernel'
+                      )
+                  )
+              )
           )
-      )
-    ORDER BY
-        CASE WHEN q.`batch_group` = 'core' THEN 0 ELSE 1 END,
-        q.`priority`,
-        q.`id`
-    LIMIT 1;
+        ORDER BY
+            CASE WHEN q.`batch_group` = 'core' THEN 0 ELSE 1 END,
+            q.`priority`,
+            q.`id`
+        LIMIT 1
+    );
 
     IF v_job_id IS NULL THEN
         DO RELEASE_LOCK('erp_batch_queue_pick');
         LEAVE proc;
     END IF;
+
+    SELECT
+        q.`cycle_id`,
+        q.`batch_name`
+    INTO
+        v_cycle_id,
+        v_batch_name
+    FROM `erp_batch_queue` q
+    WHERE q.`id` = v_job_id;
 
     SET v_started_at = NOW(6);
 
@@ -269,11 +482,11 @@ proc: BEGIN
         WHEN 'batch_recommend' THEN CALL batch_recommend();
         WHEN 'batch_supervisor' THEN CALL batch_supervisor();
         WHEN 'batch_integrity_check' THEN CALL batch_integrity_check();
+        WHEN 'batch_pause_20s' THEN DO SLEEP(20);
         WHEN 'batch_kernel' THEN CALL batch_kernel();
         WHEN 'batch_import_check' THEN CALL batch_import_check();
         WHEN 'batch_assembly_batches' THEN CALL batch_assembly_batches();
         WHEN 'batch_performance_log' THEN CALL batch_performance_log();
-        WHEN 'batch_bot_call' THEN CALL batch_bot_call();
         ELSE
             SIGNAL SQLSTATE '45000'
                 SET MYSQL_ERRNO = 1644,
@@ -302,6 +515,13 @@ ENABLE
 COMMENT 'ERP orchestrator: enqueue batch cycle'
 DO CALL erp_enqueue_cycle();
 
+CREATE EVENT ev_erp_enqueue_heavy_cycle_3m
+ON SCHEDULE EVERY 3 MINUTE
+ON COMPLETION PRESERVE
+ENABLE
+COMMENT 'ERP orchestrator: enqueue heavy batch cycle'
+DO CALL erp_enqueue_heavy_cycle();
+
 CREATE EVENT ev_erp_worker_1_5s
 ON SCHEDULE EVERY 5 SECOND
 ON COMPLETION PRESERVE
@@ -329,3 +549,10 @@ ON COMPLETION PRESERVE
 ENABLE
 COMMENT 'ERP orchestrator worker 4'
 DO CALL erp_batch_worker('worker_4');
+
+CREATE EVENT ev_batch_bot_call_53s
+ON SCHEDULE EVERY 53 SECOND
+ON COMPLETION PRESERVE
+ENABLE
+COMMENT 'ERP: bot_call batch every 53 seconds outside orchestrator queue'
+DO CALL batch_bot_call();
