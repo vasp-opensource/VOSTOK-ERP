@@ -1,6 +1,6 @@
 -- erp_batch_orchestrator: очередь батчей и worker-events для управляемого параллельного запуска.
--- Core-последовательность обычного цикла: batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_performance_log.
--- Heavy-цикл раз в 3 минуты: batch_import -> batch_assembly_batches.
+-- Core-последовательность обычного цикла: batch_import -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_performance_log.
+-- Heavy-цикл раз в 3 минуты: batch_assembly_batches.
 -- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
 -- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel; сейчас service-задачи в обычный цикл не добавляются.
 -- batch_kernel стартует только после завершения service-батчей текущего цикла.
@@ -160,8 +160,7 @@ proc: BEGIN
     ) THEN
         INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
         VALUES
-            (v_cycle_id, 'batch_import', 'core', 10, 10),
-            (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
+            (v_cycle_id, 'batch_assembly_batches', 'core', 10, 10);
 
         INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
         VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
@@ -172,6 +171,7 @@ proc: BEGIN
 
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
+        (v_cycle_id, 'batch_import', 'core', 10, 10),
         (v_cycle_id, 'batch_recommend', 'core', 20, 20),
         (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
         (v_cycle_id, 'batch_import_check', 'core', 35, 35),
@@ -261,8 +261,7 @@ proc: BEGIN
 
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
-        (v_cycle_id, 'batch_import', 'core', 10, 10),
-        (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
+        (v_cycle_id, 'batch_assembly_batches', 'core', 10, 10);
 
     INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
     VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
