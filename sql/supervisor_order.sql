@@ -82,6 +82,17 @@ BEGIN
        AND v_qty_change < 0 THEN
       CALL `rework`(v_id);
 
+    ELSEIF v_type = 'change'
+       AND v_order_sv = 'вернуть в закупку/изготовление'
+       AND v_qty_change < 0 THEN
+      UPDATE `Transactions` t
+      SET
+        t.`Status_warehouse` = 'Новая',
+        t.`Order_sv` = NULL,
+        t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor_order' ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'supervisor_order'), v_updated_by_max) END,
+        t.`updated_at` = CURRENT_TIMESTAMP
+      WHERE t.id = v_id;
+
     ELSEIF v_type = 'move'
        AND v_order_sv = 'заменить со склада'
        AND v_replace_to IS NOT NULL

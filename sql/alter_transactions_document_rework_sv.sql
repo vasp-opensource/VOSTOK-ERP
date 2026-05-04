@@ -24,6 +24,7 @@ ALTER TABLE `Transactions`
             'забраковать',
             'отменить',
             'доработать запас',
+            'вернуть в закупку/изготовление',
             'заменить со склада',
             'заменить и восполнить'
         ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
