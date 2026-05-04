@@ -1,6 +1,7 @@
 ﻿-- Набор процедур bot_* для имитации действий пользователей.
--- bot_call читает диапазоны из bot_parameters и вызывает export/purchase/shopfloor/warehouse/OTK/supervisor.
--- Projects в bot_parameters ограничивает проекты, которые видят все bot_* процедуры.
+-- bot_call генерирует случайные лимиты сценариев и вызывает export/purchase/shopfloor/warehouse/OTK/supervisor.
+-- export: exp_row_count = [5..15], exp_approve = [10..20].
+-- purch_cost в bot_call: FLOOR(5000 + RAND() * 145001) → целое [5000..150000].
 
 DELIMITER $$
 

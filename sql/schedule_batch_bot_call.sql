@@ -1,5 +1,5 @@
 -- batch_bot_call: батч bot_call с отдельным логом bot_call_log.
--- Интервал запуска: каждые 53 секунды.
+-- Запуск выполняется через erp_batch_orchestrator как core batch.
 
 CREATE TABLE IF NOT EXISTS `bot_call_log` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -39,6 +39,35 @@ BEGIN
     DECLARE v_errno INT DEFAULT NULL;
     DECLARE v_error_text TEXT;
     DECLARE v_error_status VARCHAR(16) DEFAULT 'ERROR';
+    DECLARE v_old_lock_wait_timeout INT DEFAULT NULL;
+
+    DECLARE exp_row_count INT;
+    DECLARE exp_approve INT;
+    DECLARE purch_purch INT;
+    DECLARE purch_byed INT;
+    DECLARE purch_manuf INT;
+    DECLARE prod_rework INT;
+    DECLARE purch_return INT;
+    DECLARE purch_cost BIGINT;
+    DECLARE prod_kit INT;
+    DECLARE prod_assembled INT;
+    DECLARE prod_prod INT;
+    DECLARE prod_manuf INT;
+    DECLARE prod_purch INT;
+    DECLARE prod_shipped INT;
+    DECLARE prod_loss INT;
+    DECLARE prod_return INT;
+    DECLARE wh_purch INT;
+    DECLARE wh_manuf INT;
+    DECLARE wh_return INT;
+    DECLARE wh_kit INT;
+    DECLARE OTK_manuf INT;
+    DECLARE OTK_assembly INT;
+    DECLARE OTK_shipped INT;
+    DECLARE OTK_loss INT;
+    DECLARE sv_choice INT;
+    DECLARE sv_replace INT;
+    DECLARE replace_to VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -88,6 +117,9 @@ BEGIN
         IF v_batch_lock = 1 THEN
             DO RELEASE_LOCK('batch_bot_call');
         END IF;
+        IF v_old_lock_wait_timeout IS NOT NULL THEN
+            SET SESSION innodb_lock_wait_timeout = v_old_lock_wait_timeout;
+        END IF;
         IF v_error_status = 'ERROR' THEN
             RESIGNAL;
         END IF;
@@ -96,13 +128,55 @@ BEGIN
     SET v_run_id = UUID();
     SET v_batch_started = NOW(6);
     SET @erp_batch_blocked_message = NULL;
+    SELECT @@SESSION.innodb_lock_wait_timeout INTO v_old_lock_wait_timeout;
+    SET SESSION innodb_lock_wait_timeout = 5;
     SELECT GET_LOCK('batch_bot_call', 0) INTO v_batch_lock;
 
     IF v_batch_lock = 1 THEN
+        /* Batch-режим бота: малые лимиты, чтобы не держать очередь на тяжёлых RAND/UPDATE. */
+        SET exp_row_count  = FLOOR(1 + RAND() * 3);
+        SET exp_approve    = FLOOR(1 + RAND() * 3);
+
+        SET purch_purch    = FLOOR(1 + RAND() * 3);
+        SET purch_byed     = FLOOR(1 + RAND() * 3);
+        SET purch_manuf    = FLOOR(RAND() * 2);
+        SET prod_rework    = FLOOR(RAND() * 2);
+        SET purch_return   = FLOOR(RAND() * 2);
+        SET purch_cost     = FLOOR(5000 + RAND() * 145001);
+
+        SET prod_kit       = FLOOR(1 + RAND() * 3);
+        SET prod_assembled = FLOOR(1 + RAND() * 3);
+        SET prod_prod      = FLOOR(1 + RAND() * 2);
+        SET prod_manuf     = FLOOR(1 + RAND() * 2);
+        SET prod_purch     = FLOOR(RAND() * 2);
+        SET prod_shipped   = FLOOR(RAND() * 2);
+        SET prod_loss      = FLOOR(RAND() * 2);
+        SET prod_return    = FLOOR(RAND() * 2);
+
+        SET wh_purch       = FLOOR(1 + RAND() * 3);
+        SET wh_manuf       = FLOOR(1 + RAND() * 3);
+        SET wh_return      = FLOOR(1 + RAND() * 3);
+        SET wh_kit         = FLOOR(1 + RAND() * 3);
+
+        SET OTK_manuf      = FLOOR(1 + RAND() * 3);
+        SET OTK_assembly   = FLOOR(1 + RAND() * 3);
+        SET OTK_shipped    = FLOOR(1 + RAND() * 3);
+        SET OTK_loss       = FLOOR(1 + RAND() * 3);
+
+        SET sv_choice      = CASE WHEN FLOOR(RAND() * 4) = 3 THEN 1 ELSE 0 END;
+        SET sv_replace     = CASE WHEN FLOOR(RAND() * 6) = 5 THEN 1 ELSE 0 END;
+
+        SELECT m.`ERP_ID`
+          INTO replace_to
+        FROM `Main` m
+        WHERE m.`ERP_ID` IS NOT NULL
+        ORDER BY RAND()
+        LIMIT 1;
+
         SET v_step_no = 1;
-        SET v_current_proc = 'bot_call';
+        SET v_current_proc = 'bot_export_user';
         SET v_step_started = NOW(6);
-        CALL bot_call();
+        CALL bot_export_user(exp_row_count, exp_approve);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
         END IF;
@@ -110,6 +184,74 @@ BEGIN
         INSERT INTO `bot_call_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
         VALUES (v_run_id, 'batch_bot_call', v_step_no, v_current_proc, v_step_started, v_step_finished,
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 2;
+        SET v_current_proc = 'bot_purhaser';
+        SET v_step_started = NOW(6);
+        CALL bot_purhaser(purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost);
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_bot_call', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 3;
+        SET v_current_proc = 'bot_shopfloor';
+        SET v_step_started = NOW(6);
+        CALL bot_shopfloor(prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_rework, prod_return);
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_bot_call', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 4;
+        SET v_current_proc = 'bot_warehouse';
+        SET v_step_started = NOW(6);
+        CALL bot_warehouse(wh_purch, wh_manuf, wh_return, wh_kit);
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_bot_call', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 5;
+        SET v_current_proc = 'bot_OTK';
+        SET v_step_started = NOW(6);
+        CALL bot_OTK(OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss);
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_bot_call', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 6;
+        SET v_current_proc = 'bot_supervisor';
+        SET v_step_started = NOW(6);
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_finished,
+            0,
+            'OK',
+            'Skipped temporarily',
+            CURRENT_TIMESTAMP(6)
+        );
 
         SET v_batch_finished = NOW(6);
         INSERT INTO `bot_call_log` (
@@ -129,6 +271,7 @@ BEGIN
         );
 
         DO RELEASE_LOCK('batch_bot_call');
+        SET SESSION innodb_lock_wait_timeout = v_old_lock_wait_timeout;
     ELSE
         SET v_batch_finished = NOW(6);
         INSERT INTO `bot_call_log` (
@@ -146,14 +289,9 @@ BEGIN
             'Blocked: batch_bot_call lock is already held',
             CURRENT_TIMESTAMP(6)
         );
+        SET SESSION innodb_lock_wait_timeout = v_old_lock_wait_timeout;
     END IF;
 END$$
 
 DELIMITER ;
 
-CREATE EVENT ev_batch_bot_call_53s
-ON SCHEDULE EVERY 53 SECOND
-ON COMPLETION PRESERVE
-ENABLE
-COMMENT 'ERP: bot_call batch every 53 seconds'
-DO CALL batch_bot_call();
