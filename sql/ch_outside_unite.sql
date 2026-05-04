@@ -396,7 +396,9 @@ BEGIN
         END IF;
 
         /*
-         * Одиночные отменяемые строки не создают merge-строку.
+         * Одиночные нулевые строки не создают merge-строку.
+         * Остаточный минус должен остаться «В ожидании» / «Ожидает решения»,
+         * чтобы recommend_change_wh и supervisor_order могли обработать решение супервизора.
          * Группы cnt >= 2 всегда проходят через суммарную строку, даже если adj_qty = 0:
          * исходные строки становятся «Заменено», а суммарная строка с Quantity_change = 0 — «Отменено».
          */
@@ -406,8 +408,15 @@ BEGIN
           ON g.`ERP_ID` = x.`ERP_ID`
          AND g.`ag_key` = COALESCE(NULLIF(TRIM(x.`Advanced_group`), ''), '')
         SET
-            t.`Status_transaction` = 'Отменено',
-            t.`Status_warehouse`   = 'Норма',
+            t.`Quantity_change` = g.`adj_qty`,
+            t.`Status_transaction` = CASE
+                WHEN COALESCE(g.`adj_qty`, 0) < 0 THEN 'В ожидании'
+                ELSE 'Отменено'
+            END,
+            t.`Status_warehouse` = CASE
+                WHEN COALESCE(g.`adj_qty`, 0) < 0 THEN 'Ожидает решения'
+                ELSE 'Норма'
+            END,
             t.`Source`             = p_source,
             t.`updated_at`         = NOW(),
             t.`updated_by`         = CASE
@@ -467,7 +476,7 @@ BEGIN
                 'склад',
                 0,
                 g.`adj_qty`,
-                CASE WHEN g.`adj_qty` <= 0 THEN 'Отменено' ELSE 'В ожидании' END,
+                CASE WHEN g.`adj_qty` = 0 THEN 'Отменено' ELSE 'В ожидании' END,
                 fld.`Project`, fld.`Target_assembly`, fld.`Supplied_component_number`, fld.`Component_revision`, fld.`Component_name`,
                 fld.`Quantity_in_target_assembly`, fld.`Quantity_of_target_assemblies`, fld.`Components_quantity_in_assembly`,
                 fld.`Assembly_batch_id`, fld.`Assembly_batch_name`, fld.`Assembly_batch_status`, fld.`Assembly_batch_priority`,
@@ -486,7 +495,11 @@ BEGIN
                 fld.`Replace_to`,
                 fld.`Rework_to`,
                 fld.`Rework_from`,
-                CASE WHEN g.`adj_qty` <= 0 THEN 'Норма' ELSE p_wh_merge END,
+                CASE
+                    WHEN g.`adj_qty` < 0 THEN 'Ожидает решения'
+                    WHEN g.`adj_qty` = 0 THEN 'Норма'
+                    ELSE p_wh_merge
+                END,
                 fld.`Document_no`,
                 fld.`Document_date`,
                 fld.`Zakaz_no`, fld.`Date_needed`, fld.`Date_expected`, fld.`Cost_total_rub`,
@@ -626,7 +639,7 @@ BEGIN
         WHERE g.`cnt` = 1
           AND COALESCE(g.`adj_qty`, 0) > 0;
 
-        /* cnt = 1 и adj_qty > 0: количество приводим к нетто; отменённые одиночные строки уже обработаны выше без смены Quantity_change */
+        /* cnt = 1 и adj_qty > 0: количество приводим к нетто; нулевые/отрицательные одиночные строки уже обработаны выше. */
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_delta;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_total;

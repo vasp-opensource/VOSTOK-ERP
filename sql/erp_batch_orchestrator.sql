@@ -171,6 +171,7 @@ proc: BEGIN
 
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
+        (v_cycle_id, 'batch_import', 'core', 10, 10),
         (v_cycle_id, 'batch_recommend', 'core', 20, 20),
         (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
         (v_cycle_id, 'batch_import_check', 'core', 35, 35),
@@ -477,7 +478,6 @@ proc: BEGIN
 
     CASE v_batch_name
         WHEN 'batch_import' THEN CALL batch_import();
-        WHEN 'batch_bot_call' THEN CALL batch_bot_call();
         WHEN 'batch_recommend' THEN CALL batch_recommend();
         WHEN 'batch_supervisor' THEN CALL batch_supervisor();
         WHEN 'batch_integrity_check' THEN CALL batch_integrity_check();
