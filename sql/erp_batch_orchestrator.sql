@@ -1,12 +1,12 @@
 -- erp_batch_orchestrator: очередь батчей и worker-events для управляемого параллельного запуска.
--- Core-последовательность обычного цикла: batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_bot_call -> batch_performance_log.
--- Heavy-цикл раз в 3 минуты: batch_import -> batch_assembly_batches.
+-- Core-последовательность обычного цикла: batch_import -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_performance_log.
+-- Heavy-цикл раз в 3 минуты: batch_assembly_batches.
 -- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
 -- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel; сейчас service-задачи в обычный цикл не добавляются.
 -- batch_kernel стартует только после завершения service-батчей текущего цикла.
 -- batch_performance_log запускается в конце цикла, когда batch-логи уже заполнены.
 -- Цикл с running-задачей старше 5 минут считается зависшим и освобождает очередь.
--- batch_bot_call входит в core-очередь, чтобы не конфликтовать с kernel и другими batch-процедурами.
+-- batch_bot_call не входит в очередь оркестратора: бот выполняется отдельным таймером и не блокирует kernel.
 
 DROP EVENT IF EXISTS ev_erp_run_batch;
 DROP EVENT IF EXISTS ev_batch_import_27s;
@@ -160,8 +160,7 @@ proc: BEGIN
     ) THEN
         INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
         VALUES
-            (v_cycle_id, 'batch_import', 'core', 10, 10),
-            (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
+            (v_cycle_id, 'batch_assembly_batches', 'core', 10, 10);
 
         INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
         VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
@@ -178,7 +177,6 @@ proc: BEGIN
         (v_cycle_id, 'batch_integrity_check', 'core', 40, 40),
         (v_cycle_id, 'batch_pause_20s', 'core', 45, 45),
         (v_cycle_id, 'batch_kernel', 'core', 50, 50),
-        (v_cycle_id, 'batch_bot_call', 'core', 55, 55),
         (v_cycle_id, 'batch_performance_log', 'core', 60, 60);
 
     INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
@@ -262,8 +260,7 @@ proc: BEGIN
 
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
-        (v_cycle_id, 'batch_import', 'core', 10, 10),
-        (v_cycle_id, 'batch_assembly_batches', 'core', 20, 20);
+        (v_cycle_id, 'batch_assembly_batches', 'core', 10, 10);
 
     INSERT INTO `erp_batch_orchestrator_log` (`cycle_id`, `status`, `message`)
     VALUES (v_cycle_id, 'ENQUEUED', 'Created ERP heavy batch cycle');
@@ -552,3 +549,9 @@ ENABLE
 COMMENT 'ERP orchestrator worker 4'
 DO CALL erp_batch_worker('worker_4');
 
+CREATE EVENT ev_batch_bot_call_53s
+ON SCHEDULE EVERY 53 SECOND
+ON COMPLETION PRESERVE
+ENABLE
+COMMENT 'ERP: bot_call batch every 53 seconds outside orchestrator queue'
+DO CALL batch_bot_call();
