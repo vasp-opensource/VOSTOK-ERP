@@ -32,6 +32,7 @@
 | Quantity_of_losses | bigint | NO | | 0 | |
 | Quantity_of_rework | bigint | NO | | 0 | |
 | Address | text | YES | | NULL | |
+| cell_id | int unsigned | YES | MUL | NULL | FK на `Cells.id`; одна строка `Main` / один `ERP_ID` хранится в одной ячейке |
 | Component_type | text | YES | | NULL | |
 | Part_material | text | YES | | NULL | |
 | Producer | text | YES | | NULL | |
@@ -48,9 +49,54 @@
 | Price_min | decimal(15,4) | YES | | NULL | |
 | Price_max | decimal(15,4) | YES | | NULL | |
 
-**Смысл:** одна строка — один компонент; `ERP_ID` уникален; `Components_quantity_in_assembly` задаётся при первой вставке строки из данных `Transactions` и дальше не пересчитывается процедурами; агрегированные количества по этапам (закупка, производство, склад, комплектация, цех, внедрение, отгрузка, потери); `Price_min` / `Price_max` — диапазон цены за единицу (руб.), если используется.
+**Смысл:** одна строка — один компонент; `ERP_ID` уникален; `Components_quantity_in_assembly` задаётся при первой вставке строки из данных `Transactions` и дальше не пересчитывается процедурами; агрегированные количества по этапам (закупка, производство, склад, комплектация, цех, внедрение, отгрузка, потери); `cell_id` задаёт ячейку хранения через справочник `Cells`; `Address` остаётся текстовым снимком адреса ячейки для совместимости с текущими процедурами; при заполнении/уточнении `Main.cell_id` все `Transactions.Address` с тем же `ERP_ID` обновляются текущим `Main.Address`; `Price_min` / `Price_max` — диапазон цены за единицу (руб.), если используется.
 
 **Сортировка в списках (NocoDB / отчёты):** по полю `ERP_ID` по возрастанию.
+
+---
+
+## Адресное хранение
+
+Миграция: `sql/create_storage_locations.sql`.
+
+### Таблица `Warehouses`
+
+| Field | Type | Null | Key | Default | Extra |
+|-------|------|------|-----|---------|-------|
+| id | int unsigned | NO | PRI | NULL | auto_increment |
+| created_at | timestamp | YES | | CURRENT_TIMESTAMP | |
+| updated_at | timestamp | YES | | CURRENT_TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP |
+| warehouse_no | int unsigned | NO | UNI | NULL | Номер склада для кода `W{warehouse_no}` |
+| name | varchar(255) | YES | | NULL | |
+| comment | text | YES | | NULL | Техническая информация: почтовый адрес, описание зоны и т.п. |
+
+### Таблица `Racks`
+
+| Field | Type | Null | Key | Default | Extra |
+|-------|------|------|-----|---------|-------|
+| id | int unsigned | NO | PRI | NULL | auto_increment |
+| created_at | timestamp | YES | | CURRENT_TIMESTAMP | |
+| updated_at | timestamp | YES | | CURRENT_TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP |
+| warehouse_id | int unsigned | NO | MUL | NULL | FK на `Warehouses.id` |
+| rack_no | int unsigned | NO | | NULL | Номер стеллажа для кода `R{rack_no}` |
+| name | varchar(255) | YES | | NULL | |
+| comment | text | YES | | NULL | Техническая информация по стеллажу |
+
+Уникальность: `warehouse_id + rack_no`.
+
+### Таблица `Cells`
+
+| Field | Type | Null | Key | Default | Extra |
+|-------|------|------|-----|---------|-------|
+| id | int unsigned | NO | PRI | NULL | auto_increment |
+| created_at | timestamp | YES | | CURRENT_TIMESTAMP | |
+| updated_at | timestamp | YES | | CURRENT_TIMESTAMP | ON UPDATE CURRENT_TIMESTAMP |
+| rack_id | int unsigned | NO | MUL | NULL | FK на `Racks.id` |
+| cell_no | int unsigned | NO | | NULL | Номер ячейки для кода `C{cell_no}` |
+| address_code | varchar(64) | YES | UNI | NULL | Автоматически собирается триггером как `W2R3C25`; NULL разрешён, чтобы NocoDB не требовал ручной ввод |
+| comment | text | YES | | NULL | Техническая информация: особые приметы, ограничения, пометки |
+
+Уникальность: `rack_id + cell_no` и `address_code`.
 
 ---
 
