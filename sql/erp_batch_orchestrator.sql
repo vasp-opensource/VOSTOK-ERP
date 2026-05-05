@@ -1,5 +1,5 @@
 -- erp_batch_orchestrator: очередь батчей и worker-events для управляемого параллельного запуска.
--- Core-последовательность обычного цикла: batch_import -> batch_prework -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_20s -> batch_kernel -> batch_performance_log.
+-- Core-последовательность обычного цикла: batch_import -> batch_prework -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_5s -> batch_kernel -> batch_performance_log.
 -- Heavy-цикл раз в 3 минуты: batch_assembly_batches.
 -- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
 -- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel; сейчас service-задачи в обычный цикл не добавляются.
@@ -177,7 +177,7 @@ proc: BEGIN
             (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
             (v_cycle_id, 'batch_import_check', 'core', 35, 35),
             (v_cycle_id, 'batch_integrity_check', 'core', 40, 40),
-            (v_cycle_id, 'batch_pause_20s', 'core', 45, 45),
+            (v_cycle_id, 'batch_pause_5s', 'core', 45, 45),
             (v_cycle_id, 'batch_kernel', 'core', 50, 50),
             (v_cycle_id, 'batch_performance_log', 'core', 60, 60);
 
@@ -304,7 +304,12 @@ proc: BEGIN
                     WHEN `started_at` IS NULL THEN NULL
                     ELSE ROUND(TIMESTAMPDIFF(MICROSECOND, `started_at`, v_finished_at) / 1000, 3)
                 END,
-                `error_message` = CONCAT('SQLSTATE=', COALESCE(v_sqlstate, ''), ', ERRNO=', COALESCE(v_errno, 0), ', MSG=', COALESCE(v_error_text, ''))
+                `error_message` = CONCAT(
+                    CASE WHEN v_errno IN (1205, 1213, 3572) THEN 'BLOCKED: ' ELSE '' END,
+                    'SQLSTATE=', COALESCE(v_sqlstate, ''),
+                    ', ERRNO=', COALESCE(v_errno, 0),
+                    ', MSG=', COALESCE(v_error_text, '')
+                )
             WHERE `id` = v_job_id;
 
             INSERT INTO `erp_batch_orchestrator_log` (`queue_id`, `cycle_id`, `batch_name`, `worker_name`, `status`, `message`)
@@ -314,7 +319,12 @@ proc: BEGIN
                 v_batch_name,
                 p_worker_name,
                 'FAILED',
-                CONCAT('SQLSTATE=', COALESCE(v_sqlstate, ''), ', ERRNO=', COALESCE(v_errno, 0), ', MSG=', COALESCE(v_error_text, ''))
+                CONCAT(
+                    CASE WHEN v_errno IN (1205, 1213, 3572) THEN 'BLOCKED: ' ELSE '' END,
+                    'SQLSTATE=', COALESCE(v_sqlstate, ''),
+                    ', ERRNO=', COALESCE(v_errno, 0),
+                    ', MSG=', COALESCE(v_error_text, '')
+                )
             );
 
             UPDATE `erp_batch_queue` q
@@ -334,7 +344,9 @@ proc: BEGIN
             DO RELEASE_LOCK('erp_batch_queue_pick');
         END IF;
 
-        RESIGNAL;
+        IF v_errno NOT IN (1205, 1213, 3572) THEN
+            RESIGNAL;
+        END IF;
     END;
 
     SELECT GET_LOCK('erp_batch_queue_pick', 5) INTO v_pick_lock;
@@ -483,7 +495,7 @@ proc: BEGIN
         WHEN 'batch_recommend' THEN CALL batch_recommend();
         WHEN 'batch_supervisor' THEN CALL batch_supervisor();
         WHEN 'batch_integrity_check' THEN CALL batch_integrity_check();
-        WHEN 'batch_pause_20s' THEN DO SLEEP(20);
+        WHEN 'batch_pause_5s' THEN DO SLEEP(5);
         WHEN 'batch_kernel' THEN CALL batch_kernel();
         WHEN 'batch_import_check' THEN CALL batch_import_check();
         WHEN 'batch_assembly_batches' THEN CALL batch_assembly_batches();
