@@ -1,7 +1,4 @@
--- Создать таблицу Record_source как структурную копию Transactions.
--- Копируются колонки, типы, индексы и значения AUTO_INCREMENT/DEFAULT (без данных).
-
-CREATE TABLE IF NOT EXISTS `Record_source` LIKE `Transactions`;
+-- Record_source: ИНН/КПП контрагента для последующего копирования в Import и связи Transactions с Contractors.
 
 ALTER TABLE `Record_source`
     ADD COLUMN `Contractor_INN` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NULL

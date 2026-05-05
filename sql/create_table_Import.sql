@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS `Import` (
     `Date_expected` date NULL,
     `Cost_total_rub` float NULL,
     `Supplier` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
+    `Contractor_INN` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
+    `Contractor_KPP` char(9) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
     `Price_of_single_unit` double NULL,
     `Location` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
     `Source` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,

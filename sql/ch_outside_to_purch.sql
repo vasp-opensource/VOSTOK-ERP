@@ -1,4 +1,4 @@
--- ch_outside_to_purch: передача change «внешний → склад» в закупку (Order_purch «В закупке»/«Оплачено» и Order_prod = «В закупку»).
+-- ch_outside_to_purch: передача change «внешний → склад» в закупку (Order_purch «В закупке» и Order_prod = «В закупку»).
 -- Убедитесь, что значение «В закупку» есть в enum Order_prod в вашей БД.
 --
 -- Как ch_outside_to_ownProd: отбор в tmp_ch_outside_unite_ids, неттинг и Main — в ch_outside_unite (там новые реквизиты Transactions, Main.Quantity_of_rework по DEFAULT).
@@ -41,7 +41,7 @@ BEGIN
     FROM `Transactions` t
     WHERE t.Status_warehouse IN ('Новая', 'Дефицит закупки')
       AND t.Status_transaction = 'В ожидании'
-      AND t.Order_purch IN ('В закупке', 'Оплачено')
+      AND t.Order_purch = 'В закупке'
       AND (
           t.Order_prod = 'В закупку'
           OR t.Recommend_purchprod IN ('В закупку', 'Уточнить ревизию в закупке')
@@ -53,6 +53,37 @@ BEGIN
       AND t.type = 'change'
       AND t.where_from = 'внешний'
       AND t.where_to = 'склад';
+
+    /* Уже в закупке без входящей "Новая": ch_outside_unite должен сам объединить такие дубли. */
+    INSERT IGNORE INTO tmp_ch_outside_unite_ids (id, ERP_ID, Advanced_group, Quantity_change, is_incoming)
+    SELECT
+        t.id,
+        t.ERP_ID,
+        t.Advanced_group,
+        COALESCE(t.Quantity_change, 0),
+        0
+    FROM `Transactions` t
+    WHERE t.`type` = 'change'
+      AND t.`where_from` = 'внешний'
+      AND t.`where_to` = 'склад'
+      AND t.`Order_purch` = 'В закупке'
+      AND t.`Status_warehouse` = 'В закупке'
+      AND t.`Status_transaction` = 'В ожидании'
+      AND COALESCE(t.`Quantity_change`, 0) <> 0
+      AND EXISTS (
+          SELECT 1
+          FROM `Transactions` t2
+          WHERE t2.`ERP_ID` = t.`ERP_ID`
+            AND COALESCE(NULLIF(TRIM(t2.`Advanced_group`), ''), '') = COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '')
+            AND t2.`id` <> t.`id`
+            AND t2.`type` = 'change'
+            AND t2.`where_from` = 'внешний'
+            AND t2.`where_to` = 'склад'
+            AND t2.`Order_purch` = 'В закупке'
+            AND t2.`Status_warehouse` = 'В закупке'
+            AND t2.`Status_transaction` = 'В ожидании'
+            AND COALESCE(t2.`Quantity_change`, 0) <> 0
+      );
 
     /* Уже в закупке, «В ожидании», та же пара ERP_ID + Advanced_group (#1137) */
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_snapshot;
@@ -77,7 +108,7 @@ BEGIN
       AND t.`type` = 'change'
       AND t.`where_from` = 'внешний'
       AND t.`where_to` = 'склад'
-      AND t.`Order_purch` IN ('В закупке', 'Оплачено')
+      AND t.`Order_purch` = 'В закупке'
       AND t.`Order_prod` = 'В закупку'
       AND t.`Status_warehouse` = 'В закупке'
       AND t.`Status_transaction` = 'В ожидании'

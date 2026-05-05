@@ -3,7 +3,7 @@ DROP PROCEDURE IF EXISTS import_do;
 -- import_do: сценарии Order_import / Suggestion, клоны строк в Import, финальная вставка в Transactions.
 -- Вставка в Transactions: полный набор реквизитов, как в ch_merge / deficit_*; в Import нет
 --   Recommend_purchprod, Order_*, Order_sv, Rework_*, Document_date — в SELECT даются NULL/0.
---   Supplier, Location, Source, Initial_doc_no — из Import (см. create_table_Import / миграции БД).
+--   Supplier, Contractor_id, Location, Source, Initial_doc_no — из Import/Contractors (см. create_table_Import / миграции БД).
 --   linked_transaction при вставке в Transactions — NULL (цепочка из Import не копируется).
 --   Status_warehouse при импорте в Transactions — «Новая» (не из Import).
 
@@ -19,6 +19,8 @@ BEGIN
     BEGIN
         ROLLBACK;
         DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractor_keys;
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractors;
         IF v_lock_ok = 1 THEN
             DO RELEASE_LOCK('lock_process_import_do');
         END IF;
@@ -136,7 +138,7 @@ BEGIN
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-            Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
+            Supplier, Contractor_INN, Contractor_KPP, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
             p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do', rm.parent_id,
@@ -153,7 +155,7 @@ BEGIN
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
-            p.Supplier, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
+            p.Supplier, p.Contractor_INN, p.Contractor_KPP, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
         FROM tmp_import_do_replace_move rm
         INNER JOIN `Import` p ON p.id = rm.parent_id;
 
@@ -225,7 +227,7 @@ BEGIN
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-            Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
+            Supplier, Contractor_INN, Contractor_KPP, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
             p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
@@ -246,7 +248,7 @@ BEGIN
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
-            p.Supplier, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
+            p.Supplier, p.Contractor_INN, p.Contractor_KPP, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
         FROM tmp_import_do_replace_change rc
         INNER JOIN `Import` p ON p.id = rc.parent_id;
 
@@ -266,7 +268,7 @@ BEGIN
             Part_material, Producer, Catalogue_number, Producer_article, Distributer, Distributer_article,
             MBOM_type, Mass_kg, Unit_of_measure, Height, Width, Length, Advanced_group, Address,
             Document_no, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-            Supplier, Price_of_single_unit, Location, Source, Initial_doc_no
+            Supplier, Contractor_INN, Contractor_KPP, Price_of_single_unit, Location, Source, Initial_doc_no
         )
         SELECT
             p.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
@@ -287,7 +289,7 @@ BEGIN
             p.Part_material, p.Producer, p.Catalogue_number, p.Producer_article, p.Distributer, p.Distributer_article,
             p.MBOM_type, p.Mass_kg, p.Unit_of_measure, p.Height, p.Width, p.Length, p.Advanced_group, p.Address,
             p.Document_no, p.Zakaz_no, p.Date_needed, p.Date_expected, p.Cost_total_rub,
-            p.Supplier, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
+            p.Supplier, p.Contractor_INN, p.Contractor_KPP, p.Price_of_single_unit, p.Location, p.Source, p.Initial_doc_no
         FROM tmp_import_do_replace_change rc
         INNER JOIN `Import` p ON p.id = rc.parent_id;
 
@@ -308,6 +310,86 @@ BEGIN
           AND i.Suggestion = 'Импортировать'
           AND i.Order_import = 'Выполнить';
 
+        /* Контрагенты по ИНН/КПП из Import: нормализовать, создать отсутствующих и подготовить mapping для Transactions.Contractor_id. */
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractor_keys;
+        CREATE TEMPORARY TABLE tmp_import_do_contractor_keys (
+            import_id INT UNSIGNED NOT NULL PRIMARY KEY,
+            inn varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+            kpp char(9) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
+            KEY idx_tmp_import_do_contractor_keys_inn_kpp (inn, kpp)
+        );
+
+        INSERT INTO tmp_import_do_contractor_keys (import_id, inn, kpp)
+        SELECT
+            i.id,
+            NULLIF(
+                REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(i.`Contractor_INN`, '')), ' ', ''), '-', ''), '.', ''), CHAR(9), ''),
+                ''
+            ) AS inn,
+            NULLIF(
+                REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(i.`Contractor_KPP`, '')), ' ', ''), '-', ''), '.', ''), CHAR(9), ''),
+                ''
+            ) AS kpp
+        FROM `Import` i
+        INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
+        WHERE NULLIF(
+                REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(i.`Contractor_INN`, '')), ' ', ''), '-', ''), '.', ''), CHAR(9), ''),
+                ''
+              ) IS NOT NULL;
+
+        INSERT INTO `Contractors` (
+            `created_at`,
+            `updated_at`,
+            `Short_name`,
+            `INN`,
+            `KPP`,
+            `Source_name`,
+            `Source_updated_at`
+        )
+        SELECT DISTINCT
+            NOW(),
+            NOW(),
+            k.inn,
+            k.inn,
+            k.kpp,
+            'import_do',
+            NOW()
+        FROM tmp_import_do_contractor_keys k
+        WHERE NOT EXISTS (
+              SELECT 1
+              FROM `Contractors` c
+              WHERE c.`INN` = k.inn
+                AND (
+                    (
+                        k.kpp IS NULL
+                        AND (c.`KPP` IS NULL OR TRIM(COALESCE(c.`KPP`, '')) = '')
+                    )
+                    OR c.`KPP` = k.kpp
+                )
+          );
+
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractors;
+        CREATE TEMPORARY TABLE tmp_import_do_contractors (
+            import_id INT UNSIGNED NOT NULL PRIMARY KEY,
+            contractor_id INT UNSIGNED NULL
+        );
+
+        INSERT INTO tmp_import_do_contractors (import_id, contractor_id)
+        SELECT
+            k.import_id,
+            MIN(c.`id`) AS contractor_id
+        FROM tmp_import_do_contractor_keys k
+        INNER JOIN `Contractors` c
+          ON c.`INN` = k.inn
+         AND (
+             (
+                 k.kpp IS NULL
+                 AND (c.`KPP` IS NULL OR TRIM(COALESCE(c.`KPP`, '')) = '')
+             )
+             OR c.`KPP` = k.kpp
+         )
+        GROUP BY k.import_id;
+
         /* Копия в Transactions: linked_transaction не переносим; Status_warehouse = «Новая». */
         INSERT INTO `Transactions` (
             ERP_ID, created_at, updated_at, created_by, updated_by, linked_transaction,
@@ -324,7 +406,7 @@ BEGIN
             Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
             Status_warehouse,
             Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-            Supplier, Location, Source, Initial_doc_no
+            Supplier, Contractor_id, Location, Source, Initial_doc_no
         )
         SELECT
             i.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'import_do', 'import_do',
@@ -340,9 +422,10 @@ BEGIN
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
             'Новая',
             i.Document_no, NULL, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub,
-            i.Supplier, i.Location, i.Source, i.Initial_doc_no
+            i.Supplier, c.contractor_id, i.Location, i.Source, i.Initial_doc_no
         FROM `Import` i
-        INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id;
+        INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
+        LEFT JOIN tmp_import_do_contractors c ON c.import_id = i.id;
 
         SET v_inserted_transactions_count = ROW_COUNT();
         SET v_first_transaction_id = LAST_INSERT_ID();
@@ -373,6 +456,8 @@ BEGIN
             i.updated_at = CURRENT_TIMESTAMP;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractor_keys;
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractors;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_to_transactions;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_initial_ids;
 

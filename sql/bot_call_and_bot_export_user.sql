@@ -79,7 +79,7 @@ BEGIN
             `Mass_kg`, `Unit_of_measure`, `Height`, `Width`, `Length`,
             `Advanced_group`, `Address`, `Document_no`, `Zakaz_no`,
             `Date_needed`, `Date_expected`, `Cost_total_rub`,
-            `Supplier`, `Price_of_single_unit`, `Location`, `Source`, `Initial_doc_no`
+            `Supplier`, `Contractor_INN`, `Contractor_KPP`, `Price_of_single_unit`, `Location`, `Source`, `Initial_doc_no`
         )
         SELECT
             r.`ERP_ID`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'export', 'export',
@@ -95,7 +95,7 @@ BEGIN
             r.`Mass_kg`, r.`Unit_of_measure`, r.`Height`, r.`Width`, r.`Length`,
             r.`Advanced_group`, r.`Address`, r.`Document_no`, r.`Zakaz_no`,
             r.`Date_needed`, r.`Date_expected`, r.`Cost_total_rub`,
-            r.`Supplier`, r.`Price_of_single_unit`, r.`Location`, r.`Source`, r.`Initial_doc_no`
+            r.`Supplier`, r.`Contractor_INN`, r.`Contractor_KPP`, r.`Price_of_single_unit`, r.`Location`, r.`Source`, r.`Initial_doc_no`
         FROM `Record_source` r
         WHERE (
               v_projects IS NULL
@@ -289,7 +289,7 @@ BEGIN
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
 
-    /* Оплачено + стоимость + случайный документ */
+    /* Оплачено + стоимость + случайный документ + случайный контрагент */
     IF COALESCE(purch_byed, 0) > 0 THEN
         UPDATE `Transactions` t
         INNER JOIN (
@@ -297,7 +297,8 @@ BEGIN
                 picked.id,
                 doc.`id` AS Document_id,
                 doc.`Document_no`,
-                doc.`Document_date`
+                doc.`Document_date`,
+                contractor.`id` AS Contractor_id
             FROM (
                 SELECT z.id
                 FROM `Transactions` z
@@ -321,6 +322,12 @@ BEGIN
                 ORDER BY RAND()
                 LIMIT 1
             )
+            INNER JOIN `Contractors` contractor ON contractor.`id` = (
+                SELECT c.`id`
+                FROM `Contractors` c
+                ORDER BY RAND()
+                LIMIT 1
+            )
         ) r ON r.id = t.id
         SET
             t.`Order_purch` = 'Оплачено',
@@ -328,6 +335,7 @@ BEGIN
             t.`Document_id` = r.`Document_id`,
             t.`Document_no` = r.`Document_no`,
             t.`Document_date` = r.`Document_date`,
+            t.`Contractor_id` = r.`Contractor_id`,
             t.`updated_by` = CASE
                                 WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'purchase'
                                 ELSE CONCAT(t.`updated_by`, '; ', 'purchase')
@@ -1248,37 +1256,43 @@ BEGIN
       INTO v_projects
     FROM `bot_parameters`;
 
-    SET exp_row_count  = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'exp_row_count' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET exp_approve    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'exp_approve' LIMIT 1), FLOOR(5 + RAND() * 11));
-
-    SET purch_purch    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'purch_purch' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET purch_byed     = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'purch_byed' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET purch_manuf    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'purch_manuf' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET prod_rework    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_rework' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET purch_return   = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'purch_return' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET purch_cost     = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5000) + RAND() * GREATEST(COALESCE(bp.`value_max`, 150000) - COALESCE(bp.`value_min`, 5000) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'purch_cost' LIMIT 1), FLOOR(5000 + RAND() * 145001));
-
-    SET prod_kit       = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_kit' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET prod_assembled = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 3) + RAND() * GREATEST(COALESCE(bp.`value_max`, 14) - COALESCE(bp.`value_min`, 3) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_assembled' LIMIT 1), FLOOR(3 + RAND() * 12));
-    SET prod_prod      = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 1) + RAND() * GREATEST(COALESCE(bp.`value_max`, 4) - COALESCE(bp.`value_min`, 1) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_prod' LIMIT 1), FLOOR(1 + RAND() * 4));
-    SET prod_manuf     = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 1) + RAND() * GREATEST(COALESCE(bp.`value_max`, 4) - COALESCE(bp.`value_min`, 1) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_manuf' LIMIT 1), FLOOR(1 + RAND() * 4));
-    SET prod_purch     = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_purch' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET prod_shipped   = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_shipped' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET prod_loss      = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_loss' LIMIT 1), FLOOR(0 + RAND() * 2));
-    SET prod_return    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 1) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'prod_return' LIMIT 1), FLOOR(0 + RAND() * 2));
-
-    SET wh_purch       = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'wh_purch' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET wh_manuf       = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'wh_manuf' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET wh_return      = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'wh_return' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET wh_kit         = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'wh_kit' LIMIT 1), FLOOR(5 + RAND() * 11));
-
-    SET OTK_manuf      = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'OTK_manuf' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET OTK_assembly   = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'OTK_assembly' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET OTK_shipped    = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'OTK_shipped' LIMIT 1), FLOOR(5 + RAND() * 11));
-    SET OTK_loss       = COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 5) + RAND() * GREATEST(COALESCE(bp.`value_max`, 15) - COALESCE(bp.`value_min`, 5) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'OTK_loss' LIMIT 1), FLOOR(5 + RAND() * 11));
-
-    SET sv_choice      = CASE WHEN COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 3) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'sv_choice' LIMIT 1), FLOOR(0 + RAND() * 4)) = COALESCE((SELECT bp.`value_max` FROM `bot_parameters` bp WHERE bp.`variable_name` = 'sv_choice' LIMIT 1), 3) THEN 1 ELSE 0 END;
-    SET sv_replace     = CASE WHEN COALESCE((SELECT FLOOR(COALESCE(bp.`value_min`, 0) + RAND() * GREATEST(COALESCE(bp.`value_max`, 5) - COALESCE(bp.`value_min`, 0) + 1, 1)) FROM `bot_parameters` bp WHERE bp.`variable_name` = 'sv_replace' LIMIT 1), FLOOR(0 + RAND() * 6)) = COALESCE((SELECT bp.`value_max` FROM `bot_parameters` bp WHERE bp.`variable_name` = 'sv_replace' LIMIT 1), 5) THEN 1 ELSE 0 END;
+    SELECT
+        MAX(CASE WHEN bp.`variable_name` = 'exp_row_count'  THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'exp_approve'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'purch_purch'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'purch_byed'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'purch_manuf'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_rework'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'purch_return'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'purch_cost'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_kit'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_assembled' THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_prod'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_manuf'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_purch'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_shipped'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_loss'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'prod_return'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'wh_purch'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'wh_manuf'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'wh_return'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'wh_kit'         THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'OTK_manuf'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'OTK_assembly'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'OTK_shipped'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'OTK_loss'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'sv_choice'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+        MAX(CASE WHEN bp.`variable_name` = 'sv_replace'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END)
+    INTO
+        exp_row_count, exp_approve,
+        purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost,
+        prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_return,
+        wh_purch, wh_manuf, wh_return, wh_kit,
+        OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss,
+        sv_choice, sv_replace
+    FROM `bot_parameters` bp
+    WHERE bp.`value_min` IS NOT NULL
+      AND bp.`value_max` IS NOT NULL;
 
     SELECT m.`ERP_ID`
       INTO replace_to
