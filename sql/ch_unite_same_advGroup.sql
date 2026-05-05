@@ -1,11 +1,12 @@
--- ch_unite_same_advGroup: объединение change-заявок по ERP_ID + Advanced_group.
+-- ch_unite_same_advGroup: объединение change-заявок по ERP_ID + Project + Advanced_group.
 -- В tmp_ch_ids попадают только id из групп, где подходящих строк >= 2 — иначе одиночные
 -- строки не трогаем и не создаём «замену» при каждом запуске.
 -- Блокировка: lock_ch_unite_same_advGroup
 --
 -- Отбор change: where_from = «внешний», where_to = «склад», Status_warehouse = «Новая», Status_transaction = «В ожидании».
 -- Заменённые строки: Status_transaction = «Заменено», Status_warehouse = «Норма».
--- Новая объединённая строка: те же where_from/where_to, Status_warehouse = «Новая», Status_transaction = «В ожидании»; реквизиты change — MIN / SUM(Quantity_ordered), Order_purch и Order_wh в новой строке — NULL (как ранее). Main не затрагивается.
+-- Новая объединённая строка: те же where_from/where_to; при сумме > 0 остаётся «Новая» / «В ожидании»,
+-- при сумме <= 0 закрывается как «Норма» / «Отменено». Main не затрагивается.
 
 DELIMITER $$
 
@@ -65,7 +66,8 @@ BEGIN
                 AND t2.Status_warehouse = 'Новая'
                 AND t2.Status_transaction = 'В ожидании'
                 AND t2.ERP_ID = t.ERP_ID
-                AND t2.Advanced_group <=> t.Advanced_group
+                AND COALESCE(NULLIF(TRIM(t2.Project), ''), '') = COALESCE(NULLIF(TRIM(t.Project), ''), '')
+                AND COALESCE(NULLIF(TRIM(t2.Advanced_group), ''), '') = COALESCE(NULLIF(TRIM(t.Advanced_group), ''), '')
                 AND t2.id <> t.id
           );
 
@@ -108,7 +110,7 @@ BEGIN
             'склад',
             0,
             agg.`sum_qty_change`,
-            'В ожидании',
+            CASE WHEN agg.`sum_qty_change` <= 0 THEN 'Отменено' ELSE 'В ожидании' END,
             agg.`Project`,
             agg.`Target_assembly`,
             agg.`Supplied_component_number`,
@@ -144,7 +146,7 @@ BEGIN
             agg.`Replace_to`,
             agg.`Rework_to`,
             agg.`Rework_from`,
-            'Новая',
+            CASE WHEN agg.`sum_qty_change` <= 0 THEN 'Норма' ELSE 'Новая' END,
             agg.`Document_no`,
             agg.`Document_date`,
             agg.`Zakaz_no`,
@@ -158,7 +160,8 @@ BEGIN
         FROM (
             SELECT
                 t.`ERP_ID`,
-                t.`Advanced_group`,
+                COALESCE(NULLIF(TRIM(t.`Project`), ''), '') AS `project_key`,
+                COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '') AS `ag_key`,
                 SUM(COALESCE(t.`Quantity_change`, 0)) AS `sum_qty_change`,
                 MIN(t.`Project`) AS `Project`,
                 MIN(t.`Target_assembly`) AS `Target_assembly`,
@@ -182,6 +185,7 @@ BEGIN
                 MIN(t.`Height`) AS `Height`,
                 MIN(t.`Width`) AS `Width`,
                 MIN(t.`Length`) AS `Length`,
+                MIN(t.`Advanced_group`) AS `Advanced_group`,
                 MIN(t.`Address`) AS `Address`,
                 MIN(t.`Recommend_purchprod`) AS `Recommend_purchprod`,
                 MIN(t.`Document_no`) AS `Document_no`,
@@ -204,9 +208,11 @@ BEGIN
                 MIN(t.`Rework_from`) AS `Rework_from`
             FROM `Transactions` t
             INNER JOIN tmp_ch_ids x ON x.`id` = t.`id`
-            GROUP BY t.`ERP_ID`, t.`Advanced_group`
-        ) agg
-        WHERE agg.`sum_qty_change` > 0;
+            GROUP BY
+                t.`ERP_ID`,
+                COALESCE(NULLIF(TRIM(t.`Project`), ''), ''),
+                COALESCE(NULLIF(TRIM(t.`Advanced_group`), ''), '')
+        ) agg;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_ids;
 

@@ -1,8 +1,8 @@
 -- ch_merge_same_advGroup: объединение change «внешний → склад» по ERP_ID + Project + Advanced_group + Status_warehouse,
 -- сумма Quantity_change; только Status_warehouse «В закупке» или «В изготовлении», Status_transaction «В ожидании».
--- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма»; id суммарной строки дописывается в linked_transaction через "; ".
+-- Старые строки: Status_transaction «Заменено», Status_warehouse «Норма», Recommend_purchprod очищается; id суммарной строки дописывается в linked_transaction через "; ".
 -- Новая строка: id суммарной дописывается в linked_transaction; шаблон полей — агрегаты по группе (MIN / SUM для Quantity_ordered).
--- Таблица Main не изменяется. Новые поля Transactions (Recommend_purchprod, Order_sv, Document_date, …) переносятся в суммарную строку.
+-- Таблица Main не изменяется. Recommend_purchprod в суммарной строке очищается, остальные новые поля Transactions переносятся.
 -- Блокировка: lock_ch_merge_same_advGroup
 
 DELIMITER $$
@@ -160,7 +160,7 @@ BEGIN
                 fld.`Producer`, fld.`Catalogue_number`, fld.`Producer_article`, fld.`Distributer`, fld.`Distributer_article`,
                 fld.`MBOM_type`, fld.`Mass_kg`, fld.`Unit_of_measure`, fld.`Height`, fld.`Width`, fld.`Length`,
                 fld.`Advanced_group`, fld.`Address`,
-                fld.`Recommend_purchprod`,
+                NULL,
                 fld.`Order_purch`,
                 NULL,
                 fld.`Order_prod`,
@@ -274,6 +274,7 @@ BEGIN
                     WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(v_new_id AS CHAR)
                     ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', v_new_id)
                 END,
+                t.`Recommend_purchprod` = NULL,
                 t.`updated_at`         = NOW(),
                 t.`updated_by`         = CASE
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'ch_merge_same_advGroup'
@@ -295,6 +296,7 @@ BEGIN
                 END,
                 t.`Status_transaction` = 'Заменено',
                 t.`Status_warehouse`   = 'Норма',
+                t.`Recommend_purchprod` = NULL,
                 t.`updated_at`         = NOW(),
                 t.`updated_by`         = CASE
                                             WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'ch_merge_same_advGroup'

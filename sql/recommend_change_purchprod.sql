@@ -156,6 +156,7 @@ BEGIN
   WHERE
     t.`type` = 'change'
     AND t.`Status_transaction` = 'В ожидании'
+    AND (t.`Recommend_purchprod` IS NULL OR t.`Recommend_purchprod` = '')
     AND t.`Status_warehouse` IN ('Новая', 'В закупке')
     AND NOT (t.`Recommend_purchprod` <=> 'Уточнить кол-во в изготовлении')
     AND COALESCE(p.`sum_qty`, 0) > 0;

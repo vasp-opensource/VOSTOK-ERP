@@ -59,6 +59,8 @@
 
 Миграция: `sql/create_storage_locations.sql`.
 
+Обработчик `sql/prework_address.sql` заполняет пустой `Transactions.Address` из назначенной ячейки `Main.cell_id -> Cells.address_code` для строк с тем же `ERP_ID`; `Main.Address` используется как текстовый fallback. Обёртка `sql/schedule_batch_prework.sql` запускается в основном цикле оркестратора после `batch_import` и до `batch_recommend`; в ней также вызывается `ch_unite_same_advGroup`, чтобы объединять новые change-заявки только внутри связки `ERP_ID + Project + Advanced_group`.
+
 ### Таблица `Warehouses`
 
 | Field | Type | Null | Key | Default | Extra |

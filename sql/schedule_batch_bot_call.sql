@@ -133,38 +133,44 @@ BEGIN
     SELECT GET_LOCK('batch_bot_call', 0) INTO v_batch_lock;
 
     IF v_batch_lock = 1 THEN
-        /* Batch-режим бота: малые лимиты, чтобы не держать очередь на тяжёлых RAND/UPDATE. */
-        SET exp_row_count  = FLOOR(1 + RAND() * 3);
-        SET exp_approve    = FLOOR(1 + RAND() * 3);
-
-        SET purch_purch    = FLOOR(1 + RAND() * 3);
-        SET purch_byed     = FLOOR(1 + RAND() * 3);
-        SET purch_manuf    = FLOOR(RAND() * 2);
-        SET prod_rework    = FLOOR(RAND() * 2);
-        SET purch_return   = FLOOR(RAND() * 2);
-        SET purch_cost     = FLOOR(5000 + RAND() * 145001);
-
-        SET prod_kit       = FLOOR(1 + RAND() * 3);
-        SET prod_assembled = FLOOR(1 + RAND() * 3);
-        SET prod_prod      = FLOOR(1 + RAND() * 2);
-        SET prod_manuf     = FLOOR(1 + RAND() * 2);
-        SET prod_purch     = FLOOR(RAND() * 2);
-        SET prod_shipped   = FLOOR(RAND() * 2);
-        SET prod_loss      = FLOOR(RAND() * 2);
-        SET prod_return    = FLOOR(RAND() * 2);
-
-        SET wh_purch       = FLOOR(1 + RAND() * 3);
-        SET wh_manuf       = FLOOR(1 + RAND() * 3);
-        SET wh_return      = FLOOR(1 + RAND() * 3);
-        SET wh_kit         = FLOOR(1 + RAND() * 3);
-
-        SET OTK_manuf      = FLOOR(1 + RAND() * 3);
-        SET OTK_assembly   = FLOOR(1 + RAND() * 3);
-        SET OTK_shipped    = FLOOR(1 + RAND() * 3);
-        SET OTK_loss       = FLOOR(1 + RAND() * 3);
-
-        SET sv_choice      = CASE WHEN FLOOR(RAND() * 4) = 3 THEN 1 ELSE 0 END;
-        SET sv_replace     = CASE WHEN FLOOR(RAND() * 6) = 5 THEN 1 ELSE 0 END;
+        /* Диапазоны ботов задаются только в bot_parameters. */
+        SELECT
+            MAX(CASE WHEN bp.`variable_name` = 'exp_row_count'  THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'exp_approve'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'purch_purch'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'purch_byed'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'purch_manuf'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_rework'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'purch_return'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'purch_cost'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_kit'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_assembled' THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_prod'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_manuf'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_purch'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_shipped'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_loss'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'prod_return'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'wh_purch'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'wh_manuf'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'wh_return'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'wh_kit'         THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'OTK_manuf'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'OTK_assembly'   THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'OTK_shipped'    THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'OTK_loss'       THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'sv_choice'      THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END),
+            MAX(CASE WHEN bp.`variable_name` = 'sv_replace'     THEN FLOOR(bp.`value_min` + RAND() * GREATEST(bp.`value_max` - bp.`value_min` + 1, 1)) END)
+        INTO
+            exp_row_count, exp_approve,
+            purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost,
+            prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_return,
+            wh_purch, wh_manuf, wh_return, wh_kit,
+            OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss,
+            sv_choice, sv_replace
+        FROM `bot_parameters` bp
+        WHERE bp.`value_min` IS NOT NULL
+          AND bp.`value_max` IS NOT NULL;
 
         SELECT m.`ERP_ID`
           INTO replace_to
