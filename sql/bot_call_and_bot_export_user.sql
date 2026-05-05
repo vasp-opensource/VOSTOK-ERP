@@ -1011,47 +1011,7 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_supervisor(
 )
 SQL SECURITY DEFINER
 BEGIN
-    DECLARE v_done INT DEFAULT 0;
-    DECLARE v_tx_id BIGINT DEFAULT NULL;
     DECLARE v_projects TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-    DECLARE cur_replace_wh CURSOR FOR
-        SELECT t.`id`
-        FROM `Transactions` t
-        WHERE t.`type` = 'move'
-          AND t.`Status_transaction` = 'В ожидании'
-          AND t.`Order_sv` = 'Заменить со склада'
-          AND t.`Replace_to` IS NOT NULL
-          AND TRIM(COALESCE(t.`Replace_to`, '')) <> ''
-          AND (
-                v_projects IS NULL
-             OR TRIM(COALESCE(v_projects, '')) = ''
-             OR FIND_IN_SET(
-                  TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
-                  REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
-                ) > 0
-          )
-        ORDER BY t.`id`;
-
-    DECLARE cur_replace_new CURSOR FOR
-        SELECT t.`id`
-        FROM `Transactions` t
-        WHERE t.`type` IN ('change', 'move')
-          AND t.`Status_transaction` = 'В ожидании'
-          AND t.`Order_sv` = 'Заменить и восполнить'
-          AND t.`Replace_to` IS NOT NULL
-          AND TRIM(COALESCE(t.`Replace_to`, '')) <> ''
-          AND (
-                v_projects IS NULL
-             OR TRIM(COALESCE(v_projects, '')) = ''
-             OR FIND_IN_SET(
-                  TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
-                  REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
-                ) > 0
-          )
-        ORDER BY t.`id`;
-
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
 
     SELECT NULLIF(TRIM(MAX(CASE WHEN `variable_name` = 'Projects' THEN `text_parameter` END)), '')
       INTO v_projects
@@ -1063,6 +1023,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%разбить%'
               AND (
@@ -1085,6 +1050,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%забраковать%'
               AND (
@@ -1107,6 +1077,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%отменить%'
               AND (
@@ -1129,6 +1104,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%доработать запас%'
               AND (
@@ -1147,35 +1127,20 @@ BEGIN
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
 
-    SET v_done = 0;
-    OPEN cur_replace_wh;
-    replace_wh_loop: LOOP
-        FETCH cur_replace_wh INTO v_tx_id;
-        IF v_done = 1 THEN
-            LEAVE replace_wh_loop;
-        END IF;
-        CALL replace_wh(v_tx_id);
-    END LOOP;
-    CLOSE cur_replace_wh;
-
-    SET v_done = 0;
-    OPEN cur_replace_new;
-    replace_new_loop: LOOP
-        FETCH cur_replace_new INTO v_tx_id;
-        IF v_done = 1 THEN
-            LEAVE replace_new_loop;
-        END IF;
-        CALL replace_new(v_tx_id);
-    END LOOP;
-    CLOSE cur_replace_new;
-
-    IF COALESCE(sv_replace, 0) > 0 AND replace_to IS NOT NULL AND TRIM(COALESCE(replace_to, '')) <> '' THEN
+    IF COALESCE(sv_replace, 0) > 0 THEN
         UPDATE `Transactions` t
         INNER JOIN (
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND z.`Recommend_wh` IS NOT NULL
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
+              AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
               AND (
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
@@ -1187,7 +1152,32 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_replace
         ) r ON r.id = t.id
-        SET t.`Replace_to` = replace_to,
+        SET t.`Replace_to` = COALESCE(
+                (
+                    SELECT m.`ERP_ID`
+                    FROM `Main` m
+                    WHERE m.`ERP_ID` IS NOT NULL
+                      AND TRIM(COALESCE(m.`ERP_ID`, '')) <> ''
+                      AND m.`ERP_ID` COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                      AND (
+                            v_projects IS NULL
+                         OR TRIM(COALESCE(v_projects, '')) = ''
+                         OR FIND_IN_SET(
+                              TRIM(COALESCE(CAST(m.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
+                              REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
+                            ) > 0
+                      )
+                    ORDER BY RAND()
+                    LIMIT 1
+                ),
+                CASE
+                    WHEN replace_to IS NOT NULL
+                     AND TRIM(COALESCE(replace_to, '')) <> ''
+                     AND replace_to COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    THEN replace_to
+                    ELSE NULL
+                END
+            ),
             t.`Order_sv` = 'Заменить со склада',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
@@ -1198,6 +1188,13 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
               AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND z.`Recommend_wh` IS NOT NULL
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
+              AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
+              AND (
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
                  OR FIND_IN_SET(
@@ -1208,7 +1205,32 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_replace
         ) r ON r.id = t.id
-        SET t.`Replace_to` = replace_to,
+        SET t.`Replace_to` = COALESCE(
+                (
+                    SELECT m.`ERP_ID`
+                    FROM `Main` m
+                    WHERE m.`ERP_ID` IS NOT NULL
+                      AND TRIM(COALESCE(m.`ERP_ID`, '')) <> ''
+                      AND m.`ERP_ID` COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                      AND (
+                            v_projects IS NULL
+                         OR TRIM(COALESCE(v_projects, '')) = ''
+                         OR FIND_IN_SET(
+                              TRIM(COALESCE(CAST(m.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
+                              REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
+                            ) > 0
+                      )
+                    ORDER BY RAND()
+                    LIMIT 1
+                ),
+                CASE
+                    WHEN replace_to IS NOT NULL
+                     AND TRIM(COALESCE(replace_to, '')) <> ''
+                     AND replace_to COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    THEN replace_to
+                    ELSE NULL
+                END
+            ),
             t.`Order_sv` = 'Заменить и восполнить',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
