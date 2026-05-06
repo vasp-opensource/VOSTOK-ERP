@@ -81,7 +81,8 @@ def dadata_date(value: Any) -> str | None:
     if value in (None, ""):
         return None
     try:
-        return dt.datetime.fromtimestamp(int(value) / 1000, dt.UTC).strftime("%Y-%m-%d")
+        utc_tz = getattr(dt, "UTC", dt.timezone.utc)
+        return dt.datetime.fromtimestamp(int(value) / 1000, utc_tz).strftime("%Y-%m-%d")
     except (TypeError, ValueError, OSError):
         return None
 
@@ -193,6 +194,18 @@ WHERE `id` = %s
         cursor.execute(sql, params)
 
 
+def is_duplicate_key_error(exc: Exception) -> bool:
+    errno = getattr(exc, "errno", None)
+    if errno == 1062:
+        return True
+    if getattr(exc, "args", None):
+        first = exc.args[0]
+        if isinstance(first, int) and first == 1062:
+            return True
+    text = str(exc)
+    return "Duplicate entry" in text or "1062" in text
+
+
 def suggestion_to_values(suggestion: dict[str, Any]) -> dict[str, Any]:
     data = suggestion.get("data") or {}
     short_name = nested(data, "name", "short_with_opf") or suggestion.get("value")
@@ -243,6 +256,7 @@ def main() -> int:
     connection = connect_mysql(args)
     updated = 0
     not_found = 0
+    skipped_duplicates = 0
 
     try:
         rows = select_contractors(connection, args.limit)
@@ -264,15 +278,29 @@ def main() -> int:
             if args.dry_run:
                 print(f"DRY RUN Contractor id={contractor_id} INN={inn}: {values}")
             else:
-                update_contractor(connection, contractor_id, values)
-                print(f"Contractor id={contractor_id} INN={inn}: updated from DaData")
-            updated += 1
+                try:
+                    update_contractor(connection, contractor_id, values)
+                    print(f"Contractor id={contractor_id} INN={inn}: updated from DaData")
+                    updated += 1
+                except Exception as exc:
+                    if is_duplicate_key_error(exc):
+                        skipped_duplicates += 1
+                        print(
+                            f"Contractor id={contractor_id} INN={inn}: skipped due to duplicate unique key ({exc})"
+                        )
+                        continue
+                    raise
+            if args.dry_run:
+                updated += 1
 
         if args.dry_run:
             connection.rollback()
         else:
             connection.commit()
-        print(f"Done. Updated={updated} NotFound={not_found} DryRun={args.dry_run}")
+        print(
+            f"Done. Updated={updated} NotFound={not_found} "
+            f"SkippedDuplicates={skipped_duplicates} DryRun={args.dry_run}"
+        )
         return 0
     except Exception:
         connection.rollback()
