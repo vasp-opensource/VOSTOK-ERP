@@ -13,7 +13,10 @@ ALTER TABLE `Import`
 -- Было tinyint(1): хранится величина недостачи (например 1080 − 972), не 0/1.
 ALTER TABLE `Import`
     MODIFY COLUMN `Needed_new` bigint NOT NULL DEFAULT 0;
+<<<<<<< HEAD
 
 -- bot_export_user проставляет Order_import = 'Выполнить'.
 ALTER TABLE `Import`
     MODIFY COLUMN `Order_import` enum('Ожидание','Импортировать','Отменить','Выполнить') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Ожидание';
+=======
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)

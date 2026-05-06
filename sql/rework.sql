@@ -47,11 +47,7 @@ BEGIN
   LIMIT 1;
 
   IF v_rework_from IS NOT NULL THEN
-    IF v_source_assembly_batch_id IS NULL OR TRIM(COALESCE(v_source_assembly_batch_id, '')) = '' THEN
-      CALL `assembly_batch_id_create`(v_assembly_batch_id);
-    ELSE
-      SET v_assembly_batch_id = v_source_assembly_batch_id;
-    END IF;
+    CALL `assembly_batch_id_create`(v_assembly_batch_id);
 
     SET v_assembly_batch_name = CONCAT(
       'Доработка ',
@@ -85,7 +81,6 @@ BEGIN
   ELSEIF v_old_qty = v_target_qty THEN
     UPDATE `Transactions` t
     SET
-      t.`Status_warehouse` = 'Доработка',
       t.`Assembly_batch_id` = v_assembly_batch_id,
       t.`Assembly_batch_name` = v_assembly_batch_name,
       t.`Assembly_batch_status` = NULL,
@@ -132,7 +127,7 @@ BEGIN
 
     UPDATE `Transactions` t
     SET
-      t.`Status_transaction` = 'Исполнено',
+      t.`Status_transaction` = 'Отменено',
       t.`Order_sv` = NULL,
       t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'rework' ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'rework'), v_updated_by_max) END,
       t.`updated_at` = CURRENT_TIMESTAMP
@@ -165,7 +160,6 @@ BEGIN
 
       UPDATE `Transactions` t
       SET
-        t.`Status_warehouse` = 'Доработка',
         t.`Assembly_batch_id` = v_assembly_batch_id,
         t.`Assembly_batch_name` = v_assembly_batch_name,
         t.`Assembly_batch_status` = NULL,
@@ -212,7 +206,7 @@ BEGIN
 
       UPDATE `Transactions` t
       SET
-        t.`Status_transaction` = 'Исполнено',
+        t.`Status_transaction` = 'Отменено',
         t.`Order_sv` = NULL,
         t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'rework' ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'rework'), v_updated_by_max) END,
         t.`updated_at` = CURRENT_TIMESTAMP
