@@ -101,6 +101,7 @@ BEGIN
     IF v_batch_lock = 1 THEN
         SET v_step_no = 1;
         SET v_current_proc = 'assembly_batch_set';
+        SET @erp_batch_blocked_message = NULL;
         SET v_step_started = NOW(6);
         CALL assembly_batch_set();
         IF @erp_batch_blocked_message IS NOT NULL THEN
@@ -113,6 +114,7 @@ BEGIN
 
         SET v_step_no = 2;
         SET v_current_proc = 'assembly_batch_status';
+        SET @erp_batch_blocked_message = NULL;
         SET v_step_started = NOW(6);
         CALL assembly_batch_status();
         IF @erp_batch_blocked_message IS NOT NULL THEN
@@ -125,8 +127,9 @@ BEGIN
 
         SET v_step_no = 3;
         SET v_current_proc = 'assembly_batch_collect';
+        SET @erp_batch_blocked_message = NULL;
         SET v_step_started = NOW(6);
-        CALL Assembly_batch_collect();
+        CALL assembly_batch_collect();
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
         END IF;
