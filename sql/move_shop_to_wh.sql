@@ -89,8 +89,8 @@ BEGIN
              WHERE m.ERP_ID = v_erp_id;
 
             UPDATE `Transactions` t
-               SET t.Status_warehouse   = 'Норма',
-                   t.Status_transaction = 'Исполнено',
+               SET t.Status_warehouse   = 'Ожидает решения',
+                   t.Status_transaction = 'В ожидании',
                    t.updated_at         = CURRENT_TIMESTAMP,
                    t.updated_by         = CASE
                                               WHEN `updated_by` IS NULL OR TRIM(COALESCE(`updated_by`, '')) = '' THEN 'move_shop_to_wh'

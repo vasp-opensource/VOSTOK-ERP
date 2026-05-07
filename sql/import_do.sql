@@ -14,6 +14,10 @@ BEGIN
     DECLARE v_lock_ok INT DEFAULT 0;
     DECLARE v_first_transaction_id BIGINT DEFAULT 0;
     DECLARE v_inserted_transactions_count BIGINT DEFAULT 0;
+    DECLARE v_contractors_inn_col VARCHAR(64) DEFAULT NULL;
+    DECLARE v_contractors_kpp_col VARCHAR(64) DEFAULT NULL;
+    DECLARE v_import_has_inn INT DEFAULT 0;
+    DECLARE v_import_has_kpp INT DEFAULT 0;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -310,6 +314,7 @@ BEGIN
           AND i.Suggestion = 'Импортировать'
           AND i.Order_import = 'Выполнить';
 
+<<<<<<< HEAD
         /* Контрагенты по ИНН/КПП из Import: нормализовать, создать отсутствующих и подготовить mapping для Transactions.Contractor_id. */
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractor_keys;
         CREATE TEMPORARY TABLE tmp_import_do_contractor_keys (
@@ -389,6 +394,85 @@ BEGIN
              OR c.`KPP` = k.kpp
          )
         GROUP BY k.import_id;
+=======
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_contractor_map;
+        CREATE TEMPORARY TABLE tmp_import_contractor_map (
+            id INT UNSIGNED NOT NULL PRIMARY KEY,
+            contractor_id INT UNSIGNED NULL
+        );
+
+        INSERT INTO tmp_import_contractor_map (id, contractor_id)
+        SELECT x.id, NULL
+        FROM tmp_import_do_to_transactions x;
+
+        SELECT COUNT(*)
+          INTO v_import_has_inn
+        FROM information_schema.COLUMNS c
+        WHERE c.TABLE_SCHEMA = DATABASE()
+          AND c.TABLE_NAME = 'Import'
+          AND c.COLUMN_NAME = 'Contractor_INN';
+
+        SELECT COUNT(*)
+          INTO v_import_has_kpp
+        FROM information_schema.COLUMNS c
+        WHERE c.TABLE_SCHEMA = DATABASE()
+          AND c.TABLE_NAME = 'Import'
+          AND c.COLUMN_NAME = 'Contractor_KPP';
+
+        SELECT c.COLUMN_NAME
+          INTO v_contractors_inn_col
+        FROM information_schema.COLUMNS c
+        WHERE c.TABLE_SCHEMA = DATABASE()
+          AND c.TABLE_NAME = 'Contractors'
+          AND c.COLUMN_NAME IN ('Contractor_INN', 'INN')
+        ORDER BY CASE c.COLUMN_NAME WHEN 'Contractor_INN' THEN 0 ELSE 1 END
+        LIMIT 1;
+
+        SELECT c.COLUMN_NAME
+          INTO v_contractors_kpp_col
+        FROM information_schema.COLUMNS c
+        WHERE c.TABLE_SCHEMA = DATABASE()
+          AND c.TABLE_NAME = 'Contractors'
+          AND c.COLUMN_NAME IN ('Contractor_KPP', 'KPP')
+        ORDER BY CASE c.COLUMN_NAME WHEN 'Contractor_KPP' THEN 0 ELSE 1 END
+        LIMIT 1;
+
+        IF COALESCE(v_import_has_inn, 0) = 1
+           AND v_contractors_inn_col IS NOT NULL
+           AND TRIM(COALESCE(v_contractors_inn_col, '')) <> '' THEN
+            SET @sql_map_contractors = CONCAT(
+                'UPDATE tmp_import_contractor_map m ',
+                'INNER JOIN `Import` i ON i.id = m.id ',
+                'SET m.contractor_id = (',
+                '  SELECT c.`id` ',
+                '  FROM `Contractors` c ',
+                '  WHERE CONVERT(TRIM(COALESCE(c.`', REPLACE(v_contractors_inn_col, '`', '``'), '`, '''')) USING utf8mb4) COLLATE utf8mb4_unicode_ci = ',
+                '        CONVERT(TRIM(COALESCE(i.`Contractor_INN`, '''')) USING utf8mb4) COLLATE utf8mb4_unicode_ci '
+            );
+
+            IF COALESCE(v_import_has_kpp, 0) = 1
+               AND v_contractors_kpp_col IS NOT NULL
+               AND TRIM(COALESCE(v_contractors_kpp_col, '')) <> '' THEN
+                SET @sql_map_contractors = CONCAT(
+                    @sql_map_contractors,
+                    '    AND (TRIM(COALESCE(i.`Contractor_KPP`, '''')) = '''' ',
+                    '         OR CONVERT(TRIM(COALESCE(c.`', REPLACE(v_contractors_kpp_col, '`', '``'), '`, '''')) USING utf8mb4) COLLATE utf8mb4_unicode_ci = ',
+                    '            CONVERT(TRIM(COALESCE(i.`Contractor_KPP`, '''')) USING utf8mb4) COLLATE utf8mb4_unicode_ci) '
+                );
+            END IF;
+
+            SET @sql_map_contractors = CONCAT(
+                @sql_map_contractors,
+                '  ORDER BY c.`id` ',
+                '  LIMIT 1',
+                ')'
+            );
+
+            PREPARE stmt_map_contractors FROM @sql_map_contractors;
+            EXECUTE stmt_map_contractors;
+            DEALLOCATE PREPARE stmt_map_contractors;
+        END IF;
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
 
         /* Копия в Transactions: linked_transaction не переносим; Status_warehouse = «Новая». */
         INSERT INTO `Transactions` (
@@ -422,10 +506,18 @@ BEGIN
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
             'Новая',
             i.Document_no, NULL, i.Zakaz_no, i.Date_needed, i.Date_expected, i.Cost_total_rub,
+<<<<<<< HEAD
             i.Supplier, c.contractor_id, i.Location, i.Source, i.Initial_doc_no
         FROM `Import` i
         INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
         LEFT JOIN tmp_import_do_contractors c ON c.import_id = i.id;
+=======
+            i.Supplier, cm.contractor_id,
+            i.Location, i.Source, i.Initial_doc_no
+        FROM `Import` i
+        INNER JOIN tmp_import_do_to_transactions x ON x.id = i.id
+        LEFT JOIN tmp_import_contractor_map cm ON cm.id = i.id;
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
 
         SET v_inserted_transactions_count = ROW_COUNT();
         SET v_first_transaction_id = LAST_INSERT_ID();
@@ -456,8 +548,12 @@ BEGIN
             i.updated_at = CURRENT_TIMESTAMP;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_recommend_change_unite_clear_ids;
+<<<<<<< HEAD
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractor_keys;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_contractors;
+=======
+        DROP TEMPORARY TABLE IF EXISTS tmp_import_contractor_map;
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_to_transactions;
         DROP TEMPORARY TABLE IF EXISTS tmp_import_do_initial_ids;
 

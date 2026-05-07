@@ -45,8 +45,8 @@ BEGIN
       Order_purch, Order_wh, Order_prod, Order_OTK,
       Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
       Status_warehouse,
-      Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-      Supplier, Location, Source, Initial_doc_no
+      Document_no, Document_date, Document_id, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+      Supplier, Contractor_id, Location, Source, Initial_doc_no
     )
     SELECT
       t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'split', 'split', CAST(p_transaction_id AS CHAR),
@@ -69,8 +69,8 @@ BEGIN
       t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
       NULLIF(p_order_sv_1, ''), t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
       t.Status_warehouse,
-      t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
-      t.Supplier, t.Location, t.Source, t.Initial_doc_no
+      t.Document_no, t.Document_date, t.Document_id, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+      t.Supplier, t.Contractor_id, t.Location, t.Source, t.Initial_doc_no
     FROM `Transactions` t
     WHERE t.id = p_transaction_id;
 
@@ -88,8 +88,8 @@ BEGIN
       Order_purch, Order_wh, Order_prod, Order_OTK,
       Order_sv, Recommend_wh, Quantity_ordered, Replace_to, Rework_to, Rework_from,
       Status_warehouse,
-      Document_no, Document_date, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
-      Supplier, Location, Source, Initial_doc_no
+      Document_no, Document_date, Document_id, Zakaz_no, Date_needed, Date_expected, Cost_total_rub,
+      Supplier, Contractor_id, Location, Source, Initial_doc_no
     )
     SELECT
       t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'split', 'split', CAST(p_transaction_id AS CHAR),
@@ -112,8 +112,8 @@ BEGIN
       t.Order_purch, t.Order_wh, t.Order_prod, t.Order_OTK,
       NULLIF(p_order_sv_2, ''), t.Recommend_wh, t.Quantity_ordered, t.Replace_to, t.Rework_to, t.Rework_from,
       t.Status_warehouse,
-      t.Document_no, t.Document_date, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
-      t.Supplier, t.Location, t.Source, t.Initial_doc_no
+      t.Document_no, t.Document_date, t.Document_id, t.Zakaz_no, t.Date_needed, t.Date_expected, t.Cost_total_rub,
+      t.Supplier, t.Contractor_id, t.Location, t.Source, t.Initial_doc_no
     FROM `Transactions` t
     WHERE t.id = p_transaction_id;
 

@@ -752,6 +752,36 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
+<<<<<<< HEAD
+=======
+              AND z.`Recommend_wh` = 'вернуть на склад'
+              AND (z.`Order_prod` IS NULL OR z.`Order_prod` <> 'Вернуть на склад')
+              AND (
+                    v_projects IS NULL
+                 OR TRIM(COALESCE(v_projects, '')) = ''
+                 OR FIND_IN_SET(
+                      TRIM(COALESCE(CAST(z.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
+                      REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
+                    ) > 0
+              )
+            ORDER BY RAND()
+            LIMIT prod_return
+        ) r ON r.id = t.id
+        SET t.`Order_prod` = 'Вернуть на склад',
+            t.`linked_transaction` = CASE
+                WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
+                ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
+            END,
+            t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'bot_shopfloor' ELSE CONCAT(t.`updated_by`, '; ', 'bot_shopfloor') END,
+            t.`updated_at` = CURRENT_TIMESTAMP;
+
+        UPDATE `Transactions` t
+        INNER JOIN (
+            SELECT z.id
+            FROM `Transactions` z
+            WHERE z.`type` = 'move'
+              AND z.`Status_transaction` = 'В ожидании'
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
               AND z.`where_from` = 'цех'
               AND z.`where_to` = 'склад'
               AND (
@@ -842,6 +872,30 @@ BEGIN
     END IF;
 
     IF COALESCE(wh_return, 0) > 0 THEN
+        UPDATE `Transactions` t
+        INNER JOIN (
+            SELECT z.id
+            FROM `Transactions` z
+            WHERE z.`type` = 'move'
+              AND z.`Status_transaction` = 'В ожидании'
+              AND z.`Recommend_wh` = 'вернуть на склад'
+              AND z.`Order_prod` = 'Вернуть на склад'
+              AND (z.`Order_wh` IS NULL OR z.`Order_wh` <> 'Принято на склад')
+              AND (
+                    v_projects IS NULL
+                 OR TRIM(COALESCE(v_projects, '')) = ''
+                 OR FIND_IN_SET(
+                      TRIM(COALESCE(CAST(z.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
+                      REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
+                    ) > 0
+              )
+            ORDER BY RAND()
+            LIMIT wh_return
+        ) r ON r.id = t.id
+        SET t.`Order_wh` = 'Принято на склад',
+            t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'warehouse' ELSE CONCAT(t.`updated_by`, '; ', 'warehouse') END,
+            t.`updated_at` = CURRENT_TIMESTAMP;
+
         UPDATE `Transactions` t
         INNER JOIN (
             SELECT z.id
@@ -1011,6 +1065,7 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_supervisor(
 )
 SQL SECURITY DEFINER
 BEGIN
+<<<<<<< HEAD
     DECLARE v_done INT DEFAULT 0;
     DECLARE v_tx_id BIGINT DEFAULT NULL;
     DECLARE v_projects TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -1052,6 +1107,13 @@ BEGIN
         ORDER BY t.`id`;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
+=======
+    DECLARE v_projects TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    SELECT NULLIF(TRIM(MAX(CASE WHEN `variable_name` = 'Projects' THEN `text_parameter` END)), '')
+      INTO v_projects
+    FROM `bot_parameters`;
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
 
     SELECT NULLIF(TRIM(MAX(CASE WHEN `variable_name` = 'Projects' THEN `text_parameter` END)), '')
       INTO v_projects
@@ -1063,6 +1125,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%разбить%'
               AND (
@@ -1076,7 +1143,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_choice
         ) r ON r.id = t.id
-        SET t.`Order_sv` = 'Разбить',
+        SET t.`Order_sv` = 'разбить',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
 
@@ -1085,6 +1152,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%забраковать%'
               AND (
@@ -1098,7 +1170,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_choice
         ) r ON r.id = t.id
-        SET t.`Order_sv` = 'Забраковать',
+        SET t.`Order_sv` = 'забраковать',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
 
@@ -1107,6 +1179,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%отменить%'
               AND (
@@ -1120,7 +1197,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_choice
         ) r ON r.id = t.id
-        SET t.`Order_sv` = 'Отменить',
+        SET t.`Order_sv` = 'отменить',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
 
@@ -1129,6 +1206,11 @@ BEGIN
             SELECT z.`id`
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
+              AND (
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND z.`Recommend_wh` IS NOT NULL
               AND z.`Recommend_wh` LIKE '%доработать запас%'
               AND (
@@ -1142,34 +1224,12 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_choice
         ) r ON r.id = t.id
-        SET t.`Order_sv` = 'Доработать запас',
+        SET t.`Order_sv` = 'доработать запас',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;
 
-    SET v_done = 0;
-    OPEN cur_replace_wh;
-    replace_wh_loop: LOOP
-        FETCH cur_replace_wh INTO v_tx_id;
-        IF v_done = 1 THEN
-            LEAVE replace_wh_loop;
-        END IF;
-        CALL replace_wh(v_tx_id);
-    END LOOP;
-    CLOSE cur_replace_wh;
-
-    SET v_done = 0;
-    OPEN cur_replace_new;
-    replace_new_loop: LOOP
-        FETCH cur_replace_new INTO v_tx_id;
-        IF v_done = 1 THEN
-            LEAVE replace_new_loop;
-        END IF;
-        CALL replace_new(v_tx_id);
-    END LOOP;
-    CLOSE cur_replace_new;
-
-    IF COALESCE(sv_replace, 0) > 0 AND replace_to IS NOT NULL AND TRIM(COALESCE(replace_to, '')) <> '' THEN
+    IF COALESCE(sv_replace, 0) > 0 THEN
         UPDATE `Transactions` t
         INNER JOIN (
             SELECT z.`id`
@@ -1177,6 +1237,16 @@ BEGIN
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
               AND (
+<<<<<<< HEAD
+=======
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND z.`Recommend_wh` IS NOT NULL
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
+              AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
+              AND (
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
                  OR FIND_IN_SET(
@@ -1187,8 +1257,25 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_replace
         ) r ON r.id = t.id
-        SET t.`Replace_to` = replace_to,
-            t.`Order_sv` = 'Заменить со склада',
+        SET t.`Replace_to` = COALESCE(
+                (
+                    SELECT m.`ERP_ID`
+                    FROM `Main` m
+                    WHERE m.`ERP_ID` IS NOT NULL
+                      AND TRIM(COALESCE(m.`ERP_ID`, '')) <> ''
+                      AND m.`ERP_ID` COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    ORDER BY RAND()
+                    LIMIT 1
+                ),
+                CASE
+                    WHEN replace_to IS NOT NULL
+                     AND TRIM(COALESCE(replace_to, '')) <> ''
+                     AND replace_to COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    THEN replace_to
+                    ELSE NULL
+                END
+            ),
+            t.`Order_sv` = 'заменить со склада',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
 
@@ -1198,6 +1285,16 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
               AND (
+<<<<<<< HEAD
+=======
+                    z.`Status_warehouse` = 'Ожидает решения'
+                 OR z.`Recommend_wh` IS NOT NULL
+              )
+              AND z.`Recommend_wh` IS NOT NULL
+              AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
+              AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
+              AND (
+>>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
                  OR FIND_IN_SET(
@@ -1208,8 +1305,25 @@ BEGIN
             ORDER BY RAND()
             LIMIT sv_replace
         ) r ON r.id = t.id
-        SET t.`Replace_to` = replace_to,
-            t.`Order_sv` = 'Заменить и восполнить',
+        SET t.`Replace_to` = COALESCE(
+                (
+                    SELECT m.`ERP_ID`
+                    FROM `Main` m
+                    WHERE m.`ERP_ID` IS NOT NULL
+                      AND TRIM(COALESCE(m.`ERP_ID`, '')) <> ''
+                      AND m.`ERP_ID` COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    ORDER BY RAND()
+                    LIMIT 1
+                ),
+                CASE
+                    WHEN replace_to IS NOT NULL
+                     AND TRIM(COALESCE(replace_to, '')) <> ''
+                     AND replace_to COLLATE utf8mb4_unicode_ci <> t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+                    THEN replace_to
+                    ELSE NULL
+                END
+            ),
+            t.`Order_sv` = 'заменить и восполнить',
             t.`updated_by` = CASE WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'supervisor' ELSE CONCAT(t.`updated_by`, '; ', 'supervisor') END,
             t.`updated_at` = CURRENT_TIMESTAMP;
     END IF;

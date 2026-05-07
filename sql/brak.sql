@@ -9,6 +9,7 @@ CREATE PROCEDURE `brak`(
 )
 BEGIN
   DECLARE v_updated_by_max INT DEFAULT 2000;
+  DECLARE v_source_erp_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
 
   SELECT COALESCE(c.CHARACTER_MAXIMUM_LENGTH, 2000)
     INTO v_updated_by_max
@@ -16,6 +17,12 @@ BEGIN
   WHERE c.TABLE_SCHEMA = DATABASE()
     AND c.TABLE_NAME = 'Transactions'
     AND c.COLUMN_NAME = 'updated_by'
+  LIMIT 1;
+
+  SELECT CAST(t.`ERP_ID` AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
+    INTO v_source_erp_id
+  FROM `Transactions` t
+  WHERE t.id = p_transaction_id
   LIMIT 1;
 
   INSERT INTO `Transactions` (
@@ -37,7 +44,7 @@ BEGIN
   )
   SELECT
     t.ERP_ID, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'brak', 'brak', CAST(t.id AS CHAR),
-    'move', 'склад', 'брак', COALESCE(t.Quantity_change, 0), 0, 'В ожидании',
+    'move', 'склад', 'брак', ABS(COALESCE(t.Quantity_change, 0)), 0, 'В ожидании',
     t.Project, t.Target_assembly, t.Supplied_component_number, t.Component_revision, t.Component_name,
     t.Quantity_in_target_assembly, t.Quantity_of_target_assemblies, t.Components_quantity_in_assembly,
     t.Assembly_batch_id, t.Assembly_batch_name, t.Assembly_batch_status, t.Assembly_batch_priority,
@@ -69,6 +76,20 @@ BEGIN
   WHERE t.id = p_transaction_id
     AND t.`type` = 'change'
     AND COALESCE(t.`Quantity_change`, 0) < 0;
+
+  UPDATE `Transactions` t
+  SET
+    t.`Status_warehouse` = 'Новая',
+    t.`updated_by` = CASE
+      WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'brak'
+      ELSE LEFT(CONCAT(t.`updated_by`, '; ', 'brak'), v_updated_by_max)
+    END,
+    t.`updated_at` = CURRENT_TIMESTAMP
+  WHERE t.`Status_transaction` = 'В ожидании'
+    AND t.`Status_warehouse` = 'Ожидает решения'
+    AND v_source_erp_id IS NOT NULL
+    AND t.`ERP_ID` COLLATE utf8mb4_unicode_ci = v_source_erp_id COLLATE utf8mb4_unicode_ci
+    AND t.`id` <> p_transaction_id;
 END$$
 
 DELIMITER ;

@@ -11,15 +11,41 @@ DELIMITER $$
 DROP PROCEDURE IF EXISTS ch_outside_to_purch$$
 
 CREATE PROCEDURE ch_outside_to_purch()
-BEGIN
+proc: BEGIN
+    DECLARE v_lock_ok INT DEFAULT 0;
+
     DECLARE EXIT HANDLER FOR 3572, 1213, 1205
     BEGIN
         SET @erp_batch_blocked_message = 'Blocked: ch_outside_to_purch lock conflict';
+        ROLLBACK;
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK('lock_ch_outside_to_purch');
+        END IF;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_pick;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_snapshot;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
     END;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET @erp_batch_blocked_message = 'Failed: ch_outside_to_purch SQL exception';
+        ROLLBACK;
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK('lock_ch_outside_to_purch');
+        END IF;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_pick;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_snapshot;
+        DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
+        RESIGNAL;
+    END;
+
+    SELECT GET_LOCK('lock_ch_outside_to_purch', 0) INTO v_lock_ok;
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+        SET @erp_batch_blocked_message = 'Blocked: lock_ch_outside_to_purch lock is already held';
+        LEAVE proc;
+    END IF;
 
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_ids;
     CREATE TEMPORARY TABLE tmp_ch_outside_unite_ids (
@@ -152,6 +178,7 @@ BEGIN
       AND t.`Status_warehouse` = 'Ожидание поставки';
 
     DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_erp_ids;
+    DO RELEASE_LOCK('lock_ch_outside_to_purch');
 END$$
 
 DELIMITER ;

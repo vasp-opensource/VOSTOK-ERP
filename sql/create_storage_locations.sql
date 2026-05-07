@@ -49,13 +49,57 @@ CREATE TABLE IF NOT EXISTS `Cells` (
         ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE `Main`
-    ADD COLUMN `cell_id` int unsigned NULL AFTER `Address`,
-    ADD INDEX `idx_main_cell_id` (`cell_id`),
-    ADD CONSTRAINT `fk_main_cell`
-        FOREIGN KEY (`cell_id`) REFERENCES `Cells` (`id`)
-        ON UPDATE CASCADE
-        ON DELETE SET NULL;
+SET @sql_add_main_cell_id = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'Main'
+              AND COLUMN_NAME = 'cell_id'
+        ),
+        'SELECT 1',
+        'ALTER TABLE `Main` ADD COLUMN `cell_id` int unsigned NULL AFTER `Address`'
+    )
+);
+PREPARE stmt_add_main_cell_id FROM @sql_add_main_cell_id;
+EXECUTE stmt_add_main_cell_id;
+DEALLOCATE PREPARE stmt_add_main_cell_id;
+
+SET @sql_add_main_cell_idx = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'Main'
+              AND INDEX_NAME = 'idx_main_cell_id'
+        ),
+        'SELECT 1',
+        'ALTER TABLE `Main` ADD INDEX `idx_main_cell_id` (`cell_id`)'
+    )
+);
+PREPARE stmt_add_main_cell_idx FROM @sql_add_main_cell_idx;
+EXECUTE stmt_add_main_cell_idx;
+DEALLOCATE PREPARE stmt_add_main_cell_idx;
+
+SET @sql_add_main_cell_fk = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1
+            FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'Main'
+              AND CONSTRAINT_NAME = 'fk_main_cell'
+              AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+        ),
+        'SELECT 1',
+        'ALTER TABLE `Main` ADD CONSTRAINT `fk_main_cell` FOREIGN KEY (`cell_id`) REFERENCES `Cells` (`id`) ON UPDATE CASCADE ON DELETE SET NULL'
+    )
+);
+PREPARE stmt_add_main_cell_fk FROM @sql_add_main_cell_fk;
+EXECUTE stmt_add_main_cell_fk;
+DEALLOCATE PREPARE stmt_add_main_cell_fk;
 
 DELIMITER //
 
@@ -130,6 +174,83 @@ BEGIN
     END IF;
 END//
 
+DROP TRIGGER IF EXISTS `au_warehouses_sync_transactions_location`//
+CREATE TRIGGER `au_warehouses_sync_transactions_location`
+AFTER UPDATE ON `Warehouses`
+FOR EACH ROW
+BEGIN
+    DECLARE v_old_location TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_new_location TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE CONTINUE HANDLER FOR 1205, 1213, 3572 BEGIN END;
+
+    IF NOT (NEW.`name` <=> OLD.`name`)
+       OR NOT (NEW.`comment` <=> OLD.`comment`) THEN
+        SET v_old_location = NULLIF(
+            TRIM(
+                CONCAT(
+                    COALESCE(NULLIF(TRIM(COALESCE(OLD.`name`, '')), ''), ''),
+                    CASE
+                        WHEN NULLIF(TRIM(COALESCE(OLD.`comment`, '')), '') IS NULL THEN ''
+                        ELSE CONCAT(' - ', TRIM(COALESCE(OLD.`comment`, '')))
+                    END
+                )
+            ),
+            ''
+        );
+
+        SET v_new_location = NULLIF(
+            TRIM(
+                CONCAT(
+                    COALESCE(NULLIF(TRIM(COALESCE(NEW.`name`, '')), ''), ''),
+                    CASE
+                        WHEN NULLIF(TRIM(COALESCE(NEW.`comment`, '')), '') IS NULL THEN ''
+                        ELSE CONCAT(' - ', TRIM(COALESCE(NEW.`comment`, '')))
+                    END
+                )
+            ),
+            ''
+        );
+
+        -- 1) Базовая синхронизация по текущей связке Main.cell_id -> Cells -> Racks -> Warehouses.
+        UPDATE `Transactions` t
+        JOIN `Main` m
+          ON m.`ERP_ID` COLLATE utf8mb4_unicode_ci = t.`ERP_ID` COLLATE utf8mb4_unicode_ci
+        JOIN `Cells` c
+          ON c.`id` = m.`cell_id`
+        JOIN `Racks` r
+          ON r.`id` = c.`rack_id`
+         SET t.`Location` = v_new_location,
+             t.`updated_by` = CASE
+                WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'au_warehouses_sync_transactions_location'
+                ELSE CONCAT(t.`updated_by`, '; ', 'au_warehouses_sync_transactions_location')
+             END,
+             t.`updated_at` = CURRENT_TIMESTAMP
+       WHERE r.`warehouse_id` = NEW.`id`
+         AND m.`cell_id` IS NOT NULL
+         AND NOT (
+             CONVERT(TRIM(COALESCE(t.`Location`, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+             <=> CONVERT(TRIM(COALESCE(v_new_location, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         );
+
+        -- 2) Fallback для move: обновить строки, где Location хранит старый текст склада,
+        -- даже если текущая связка через Main.cell_id отсутствует/изменилась.
+        UPDATE `Transactions` t
+           SET t.`Location` = v_new_location,
+               t.`updated_by` = CASE
+                   WHEN t.`updated_by` IS NULL OR TRIM(COALESCE(t.`updated_by`, '')) = '' THEN 'au_warehouses_sync_transactions_location'
+                   ELSE CONCAT(t.`updated_by`, '; ', 'au_warehouses_sync_transactions_location')
+               END,
+               t.`updated_at` = CURRENT_TIMESTAMP
+         WHERE t.`type` = 'move'
+           AND CONVERT(TRIM(COALESCE(t.`Location`, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+               <=> CONVERT(TRIM(COALESCE(v_old_location, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+           AND NOT (
+               CONVERT(TRIM(COALESCE(t.`Location`, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+               <=> CONVERT(TRIM(COALESCE(v_new_location, '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci
+           );
+    END IF;
+END//
+
 DROP TRIGGER IF EXISTS `bi_main_sync_address_from_cell`//
 CREATE TRIGGER `bi_main_sync_address_from_cell`
 BEFORE INSERT ON `Main`
@@ -169,9 +290,31 @@ CREATE TRIGGER `ai_main_sync_transactions_address`
 AFTER INSERT ON `Main`
 FOR EACH ROW
 BEGIN
+    DECLARE v_location_text TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
     IF NEW.`cell_id` IS NOT NULL THEN
+        SELECT NULLIF(
+                   TRIM(
+                       CONCAT(
+                           COALESCE(NULLIF(TRIM(COALESCE(w.`name`, '')), ''), ''),
+                           CASE
+                               WHEN NULLIF(TRIM(COALESCE(w.`comment`, '')), '') IS NULL THEN ''
+                               ELSE CONCAT(' - ', TRIM(COALESCE(w.`comment`, '')))
+                           END
+                       )
+                   ),
+                   ''
+               )
+          INTO v_location_text
+          FROM `Cells` c
+          JOIN `Racks` r ON r.`id` = c.`rack_id`
+          JOIN `Warehouses` w ON w.`id` = r.`warehouse_id`
+         WHERE c.`id` = NEW.`cell_id`
+         LIMIT 1;
+
         UPDATE `Transactions`
-           SET `Address` = NEW.`Address`
+           SET `Address` = NEW.`Address`,
+               `Location` = v_location_text
          WHERE `ERP_ID` COLLATE utf8mb4_unicode_ci = NEW.`ERP_ID` COLLATE utf8mb4_unicode_ci;
     END IF;
 END//
@@ -181,14 +324,36 @@ CREATE TRIGGER `au_main_sync_transactions_address`
 AFTER UPDATE ON `Main`
 FOR EACH ROW
 BEGIN
+    DECLARE v_location_text TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
     IF NEW.`cell_id` IS NOT NULL
        AND (
            NOT (NEW.`cell_id` <=> OLD.`cell_id`)
            OR NOT (NEW.`Address` <=> OLD.`Address`)
            OR NOT (NEW.`ERP_ID` <=> OLD.`ERP_ID`)
        ) THEN
+        SELECT NULLIF(
+                   TRIM(
+                       CONCAT(
+                           COALESCE(NULLIF(TRIM(COALESCE(w.`name`, '')), ''), ''),
+                           CASE
+                               WHEN NULLIF(TRIM(COALESCE(w.`comment`, '')), '') IS NULL THEN ''
+                               ELSE CONCAT(' - ', TRIM(COALESCE(w.`comment`, '')))
+                           END
+                       )
+                   ),
+                   ''
+               )
+          INTO v_location_text
+          FROM `Cells` c
+          JOIN `Racks` r ON r.`id` = c.`rack_id`
+          JOIN `Warehouses` w ON w.`id` = r.`warehouse_id`
+         WHERE c.`id` = NEW.`cell_id`
+         LIMIT 1;
+
         UPDATE `Transactions`
-           SET `Address` = NEW.`Address`
+           SET `Address` = NEW.`Address`,
+               `Location` = v_location_text
          WHERE `ERP_ID` COLLATE utf8mb4_unicode_ci = NEW.`ERP_ID` COLLATE utf8mb4_unicode_ci;
     END IF;
 END//

@@ -33,13 +33,31 @@ DROP PROCEDURE IF EXISTS notify_integrity_check_email$$
 CREATE PROCEDURE notify_integrity_check_email(
     IN p_recipient VARCHAR(255)
 )
-BEGIN
+proc: BEGIN
+    DECLARE v_lock_ok INT DEFAULT 0;
     DECLARE v_last_sent_id BIGINT UNSIGNED DEFAULT 0;
     DECLARE v_max_id BIGINT UNSIGNED DEFAULT NULL;
     DECLARE v_cnt BIGINT UNSIGNED DEFAULT 0;
     DECLARE v_subject VARCHAR(255);
     DECLARE v_body LONGTEXT;
     DECLARE v_old_gc BIGINT UNSIGNED DEFAULT 1024;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET SESSION group_concat_max_len = v_old_gc;
+        SET @erp_batch_blocked_message = 'Failed: notify_integrity_check_email SQL exception';
+        IF v_lock_ok = 1 THEN
+            DO RELEASE_LOCK('lock_notify_integrity_check_email');
+        END IF;
+        RESIGNAL;
+    END;
+
+    SELECT GET_LOCK('lock_notify_integrity_check_email', 0) INTO v_lock_ok;
+    IF COALESCE(v_lock_ok, 0) <> 1 THEN
+        SET @erp_batch_blocked_message = 'Blocked: lock_notify_integrity_check_email lock is already held';
+        LEAVE proc;
+    END IF;
 
     START TRANSACTION;
 
@@ -111,6 +129,7 @@ BEGIN
     END IF;
 
     COMMIT;
+    DO RELEASE_LOCK('lock_notify_integrity_check_email');
 END$$
 
 DELIMITER ;

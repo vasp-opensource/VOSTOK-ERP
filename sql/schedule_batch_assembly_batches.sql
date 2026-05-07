@@ -112,6 +112,18 @@ BEGIN
                 ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
 
         SET v_step_no = 2;
+        SET v_current_proc = 'assembly_batch_status';
+        SET v_step_started = NOW(6);
+        CALL assembly_batch_status();
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `assembly_batches_log` (run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at)
+        VALUES (v_run_id, 'batch_assembly_batches', v_step_no, v_current_proc, v_step_started, v_step_finished,
+                ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3), 'OK', CURRENT_TIMESTAMP(6));
+
+        SET v_step_no = 3;
         SET v_current_proc = 'assembly_batch_collect';
         SET v_step_started = NOW(6);
         CALL Assembly_batch_collect();
