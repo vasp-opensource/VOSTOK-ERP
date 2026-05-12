@@ -30,6 +30,11 @@ BEGIN
     DECLARE v_take BIGINT DEFAULT 0;
     DECLARE v_new_id INT UNSIGNED;
     DECLARE v_queue_left INT DEFAULT 0;
+    DECLARE v_purchase_mismatch_cnt INT DEFAULT 0;
+    DECLARE v_purchase_mismatch_erp VARCHAR(255) DEFAULT NULL;
+    DECLARE v_purchase_mismatch_open BIGINT DEFAULT 0;
+    DECLARE v_purchase_mismatch_main BIGINT DEFAULT 0;
+    DECLARE v_guard_error_text TEXT;
 
     DECLARE EXIT HANDLER FOR 3572, 1213, 1205
     BEGIN
@@ -640,6 +645,74 @@ BEGIN
           AND COALESCE(g.`adj_qty`, 0) > 0;
 
         /* cnt = 1 и adj_qty > 0: количество приводим к нетто; нулевые/отрицательные одиночные строки уже обработаны выше. */
+
+        /* Safety-check для закупки:
+           если после всех изменений сумма открытых change "В закупке" не равна Main.inProcess_purchase,
+           откатываем весь запуск процедуры. */
+        IF p_main_use_manufacturing = 0 THEN
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_erp_scope;
+            CREATE TEMPORARY TABLE tmp_ch_outside_unite_erp_scope AS
+            SELECT DISTINCT `ERP_ID`
+            FROM tmp_ch_outside_unite_ids;
+
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_purchase_open_sum;
+            CREATE TEMPORARY TABLE tmp_ch_outside_unite_purchase_open_sum AS
+            SELECT
+                t.`ERP_ID`,
+                SUM(COALESCE(t.`Quantity_change`, 0)) AS sum_open
+            FROM `Transactions` t
+            INNER JOIN tmp_ch_outside_unite_erp_scope ee ON ee.`ERP_ID` = t.`ERP_ID`
+            WHERE t.`type` = 'change'
+              AND t.`where_from` = 'внешний'
+              AND t.`where_to` = 'склад'
+              AND (t.`Status_transaction` IS NULL OR t.`Status_transaction` = 'В ожидании')
+              AND t.`Status_warehouse` = 'В закупке'
+              AND (
+                   t.`Source` = 'Покупное'
+                OR t.`Source` IS NULL
+                OR TRIM(COALESCE(t.`Source`, '')) = ''
+              )
+            GROUP BY t.`ERP_ID`;
+
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_purchase_check;
+            CREATE TEMPORARY TABLE tmp_ch_outside_unite_purchase_check AS
+            SELECT
+                e.`ERP_ID`,
+                COALESCE(tx.sum_open, 0) AS sum_open,
+                COALESCE(m.`inProcess_purchase`, 0) AS main_value
+            FROM tmp_ch_outside_unite_erp_scope e
+            LEFT JOIN tmp_ch_outside_unite_purchase_open_sum tx ON tx.`ERP_ID` = e.`ERP_ID`
+            LEFT JOIN `Main` m ON m.`ERP_ID` = e.`ERP_ID`;
+
+            SELECT COUNT(*)
+              INTO v_purchase_mismatch_cnt
+            FROM tmp_ch_outside_unite_purchase_check c
+            WHERE COALESCE(c.sum_open, 0) <> COALESCE(c.main_value, 0);
+
+            IF v_purchase_mismatch_cnt > 0 THEN
+                SELECT c.`ERP_ID`, COALESCE(c.sum_open, 0), COALESCE(c.main_value, 0)
+                  INTO v_purchase_mismatch_erp, v_purchase_mismatch_open, v_purchase_mismatch_main
+                FROM tmp_ch_outside_unite_purchase_check c
+                WHERE COALESCE(c.sum_open, 0) <> COALESCE(c.main_value, 0)
+                ORDER BY c.`ERP_ID`
+                LIMIT 1;
+
+                SET v_guard_error_text = CONCAT(
+                    'Integrity guard failed in ', p_proc_name,
+                    ': ERP_ID=', COALESCE(v_purchase_mismatch_erp, 'NULL'),
+                    ' sum_open=', COALESCE(v_purchase_mismatch_open, 0),
+                    ' Main.inProcess_purchase=', COALESCE(v_purchase_mismatch_main, 0)
+                );
+
+                SIGNAL SQLSTATE '45000'
+                    SET MYSQL_ERRNO = 1644,
+                        MESSAGE_TEXT = v_guard_error_text;
+            END IF;
+
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_purchase_check;
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_purchase_open_sum;
+            DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_erp_scope;
+        END IF;
 
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_main_delta;
         DROP TEMPORARY TABLE IF EXISTS tmp_ch_outside_unite_partner_total;
