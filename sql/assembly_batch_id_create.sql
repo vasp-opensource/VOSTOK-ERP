@@ -22,19 +22,21 @@ BEGIN
       SUBSTRING(v_chars, FLOOR(1 + RAND() * 36), 1)
     );
 
-    SELECT COUNT(*)
-      INTO v_batch_exists
-    FROM (
-      SELECT t.`Assembly_batch_id`
-      FROM `Transactions` t
-      WHERE t.`Assembly_batch_id` COLLATE utf8mb4_unicode_ci =
-            v_candidate COLLATE utf8mb4_unicode_ci
-      UNION ALL
-      SELECT ab.`Assembly_batch_id`
-      FROM `Assembly_batches` ab
-      WHERE ab.`Assembly_batch_id` COLLATE utf8mb4_unicode_ci =
-            v_candidate COLLATE utf8mb4_unicode_ci
-    ) existing_batches;
+    SELECT
+      (
+        SELECT COUNT(*)
+        FROM `Transactions` t
+        WHERE CONVERT(t.`Assembly_batch_id` USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+              v_candidate COLLATE utf8mb4_unicode_ci
+      )
+      +
+      (
+        SELECT COUNT(*)
+        FROM `Assembly_batches` ab
+        WHERE CONVERT(ab.`Assembly_batch_id` USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+              v_candidate COLLATE utf8mb4_unicode_ci
+      )
+      INTO v_batch_exists;
 
     IF v_batch_exists = 0 THEN
       SET p_Assembly_batch_id = v_candidate;
