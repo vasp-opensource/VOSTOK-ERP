@@ -2,11 +2,12 @@
 -- Core-последовательность обычного цикла: batch_import -> batch_prework -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_5s -> batch_kernel -> batch_performance_log.
 -- Heavy-цикл раз в 3 минуты: batch_assembly_batches.
 -- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
--- Service-батчи могут идти параллельно с core, кроме периода выполнения batch_kernel; сейчас service-задачи в обычный цикл не добавляются.
+-- Service-батчи (batch_bot_call) добавляются в каждый обычный цикл и могут идти параллельно с core,
+-- кроме периода выполнения batch_kernel.
 -- batch_kernel стартует только после завершения service-батчей текущего цикла.
 -- batch_performance_log запускается в конце цикла, когда batch-логи уже заполнены.
 -- Цикл с running-задачей старше 5 минут считается зависшим и освобождает очередь.
--- batch_bot_call не входит в очередь оркестратора: бот выполняется отдельным таймером и не блокирует kernel.
+-- batch_assembly_batches и batch_bot_call запускаются только через оркестратор (без отдельных таймеров).
 
 DROP EVENT IF EXISTS ev_erp_run_batch;
 DROP EVENT IF EXISTS ev_batch_import_27s;
@@ -172,6 +173,7 @@ proc: BEGIN
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
             (v_cycle_id, 'batch_import', 'core', 10, 10),
+            (v_cycle_id, 'batch_bot_call', 'service', NULL, 12),
             (v_cycle_id, 'batch_prework', 'core', 15, 15),
             (v_cycle_id, 'batch_recommend', 'core', 20, 20),
             (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
@@ -499,6 +501,7 @@ proc: BEGIN
         WHEN 'batch_kernel' THEN CALL batch_kernel();
         WHEN 'batch_import_check' THEN CALL batch_import_check();
         WHEN 'batch_assembly_batches' THEN CALL batch_assembly_batches();
+        WHEN 'batch_bot_call' THEN CALL batch_bot_call();
         WHEN 'batch_performance_log' THEN CALL batch_performance_log();
         ELSE
             SIGNAL SQLSTATE '45000'
@@ -562,10 +565,3 @@ ON COMPLETION PRESERVE
 ENABLE
 COMMENT 'ERP orchestrator worker 4'
 DO CALL erp_batch_worker('worker_4');
-
-CREATE EVENT ev_batch_bot_call_53s
-ON SCHEDULE EVERY 53 SECOND
-ON COMPLETION PRESERVE
-ENABLE
-COMMENT 'ERP: bot_call batch every 53 seconds outside orchestrator queue'
-DO CALL batch_bot_call();
