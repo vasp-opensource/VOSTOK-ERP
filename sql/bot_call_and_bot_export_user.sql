@@ -706,7 +706,7 @@ BEGIN
             ORDER BY RAND()
             LIMIT prod_shipped
         ) r ON r.id = t.id
-        SET t.`Order_prod` = 'Упаковано',
+        SET t.`Order_prod` = 'Отгружено',
             t.`linked_transaction` = CASE
                 WHEN t.`linked_transaction` IS NULL OR TRIM(COALESCE(t.`linked_transaction`, '')) = '' THEN CAST(t.id AS CHAR)
                 ELSE CONCAT(TRIM(t.`linked_transaction`), '; ', t.id)
@@ -752,8 +752,6 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
-<<<<<<< HEAD
-=======
               AND z.`Recommend_wh` = 'вернуть на склад'
               AND (z.`Order_prod` IS NULL OR z.`Order_prod` <> 'Вернуть на склад')
               AND (
@@ -781,7 +779,6 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
->>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
               AND z.`where_from` = 'цех'
               AND z.`where_to` = 'склад'
               AND (
@@ -1065,55 +1062,7 @@ CREATE DEFINER=`bot_ERP`@`%` PROCEDURE bot_supervisor(
 )
 SQL SECURITY DEFINER
 BEGIN
-<<<<<<< HEAD
-    DECLARE v_done INT DEFAULT 0;
-    DECLARE v_tx_id BIGINT DEFAULT NULL;
     DECLARE v_projects TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-    DECLARE cur_replace_wh CURSOR FOR
-        SELECT t.`id`
-        FROM `Transactions` t
-        WHERE t.`type` = 'move'
-          AND t.`Status_transaction` = 'В ожидании'
-          AND t.`Order_sv` = 'Заменить со склада'
-          AND t.`Replace_to` IS NOT NULL
-          AND TRIM(COALESCE(t.`Replace_to`, '')) <> ''
-          AND (
-                v_projects IS NULL
-             OR TRIM(COALESCE(v_projects, '')) = ''
-             OR FIND_IN_SET(
-                  TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
-                  REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
-                ) > 0
-          )
-        ORDER BY t.`id`;
-
-    DECLARE cur_replace_new CURSOR FOR
-        SELECT t.`id`
-        FROM `Transactions` t
-        WHERE t.`type` IN ('change', 'move')
-          AND t.`Status_transaction` = 'В ожидании'
-          AND t.`Order_sv` = 'Заменить и восполнить'
-          AND t.`Replace_to` IS NOT NULL
-          AND TRIM(COALESCE(t.`Replace_to`, '')) <> ''
-          AND (
-                v_projects IS NULL
-             OR TRIM(COALESCE(v_projects, '')) = ''
-             OR FIND_IN_SET(
-                  TRIM(COALESCE(CAST(t.`Project` AS CHAR CHARACTER SET utf8mb4), '')) COLLATE utf8mb4_unicode_ci,
-                  REPLACE(v_projects, ', ', ',') COLLATE utf8mb4_unicode_ci
-                ) > 0
-          )
-        ORDER BY t.`id`;
-
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
-=======
-    DECLARE v_projects TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-    SELECT NULLIF(TRIM(MAX(CASE WHEN `variable_name` = 'Projects' THEN `text_parameter` END)), '')
-      INTO v_projects
-    FROM `bot_parameters`;
->>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
 
     SELECT NULLIF(TRIM(MAX(CASE WHEN `variable_name` = 'Projects' THEN `text_parameter` END)), '')
       INTO v_projects
@@ -1237,8 +1186,6 @@ BEGIN
             WHERE z.`type` = 'move'
               AND z.`Status_transaction` = 'В ожидании'
               AND (
-<<<<<<< HEAD
-=======
                     z.`Status_warehouse` = 'Ожидает решения'
                  OR z.`Recommend_wh` IS NOT NULL
               )
@@ -1246,7 +1193,6 @@ BEGIN
               AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
               AND (
->>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
                  OR FIND_IN_SET(
@@ -1285,8 +1231,6 @@ BEGIN
             FROM `Transactions` z
             WHERE z.`Status_transaction` = 'В ожидании'
               AND (
-<<<<<<< HEAD
-=======
                     z.`Status_warehouse` = 'Ожидает решения'
                  OR z.`Recommend_wh` IS NOT NULL
               )
@@ -1294,7 +1238,6 @@ BEGIN
               AND (z.`Order_sv` IS NULL OR TRIM(COALESCE(z.`Order_sv`, '')) = '')
               AND (z.`Replace_to` IS NULL OR TRIM(COALESCE(z.`Replace_to`, '')) = '')
               AND (
->>>>>>> b29be25 (fix: stabilize supervisor and import SQL workflows)
                     v_projects IS NULL
                  OR TRIM(COALESCE(v_projects, '')) = ''
                  OR FIND_IN_SET(

@@ -182,6 +182,21 @@ BEGIN
         SET v_step_no = 1;
         SET v_current_proc = 'bot_export_user';
         SET v_step_started = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_started,
+            0,
+            'OK',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
         CALL bot_export_user(exp_row_count, exp_approve);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
@@ -194,6 +209,21 @@ BEGIN
         SET v_step_no = 2;
         SET v_current_proc = 'bot_purhaser';
         SET v_step_started = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_started,
+            0,
+            'OK',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
         CALL bot_purhaser(purch_purch, purch_byed, purch_manuf, prod_rework, purch_return, purch_cost);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
@@ -206,6 +236,21 @@ BEGIN
         SET v_step_no = 3;
         SET v_current_proc = 'bot_shopfloor';
         SET v_step_started = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_started,
+            0,
+            'OK',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
         CALL bot_shopfloor(prod_kit, prod_assembled, prod_prod, prod_manuf, prod_purch, prod_shipped, prod_loss, prod_rework, prod_return);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
@@ -218,6 +263,21 @@ BEGIN
         SET v_step_no = 4;
         SET v_current_proc = 'bot_warehouse';
         SET v_step_started = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_started,
+            0,
+            'OK',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
         CALL bot_warehouse(wh_purch, wh_manuf, wh_return, wh_kit);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
@@ -230,6 +290,21 @@ BEGIN
         SET v_step_no = 5;
         SET v_current_proc = 'bot_OTK';
         SET v_step_started = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_started,
+            0,
+            'OK',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
         CALL bot_OTK(OTK_manuf, OTK_assembly, OTK_shipped, OTK_loss);
         IF @erp_batch_blocked_message IS NOT NULL THEN
             SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
@@ -242,7 +317,6 @@ BEGIN
         SET v_step_no = 6;
         SET v_current_proc = 'bot_supervisor';
         SET v_step_started = NOW(6);
-        SET v_step_finished = NOW(6);
         INSERT INTO `bot_call_log` (
             run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, error_message, created_at
         )
@@ -252,10 +326,29 @@ BEGIN
             v_step_no,
             v_current_proc,
             v_step_started,
-            v_step_finished,
+            v_step_started,
             0,
             'OK',
-            'Skipped temporarily',
+            'STARTED',
+            CURRENT_TIMESTAMP(6)
+        );
+        CALL bot_supervisor(sv_choice, sv_replace, replace_to);
+        IF @erp_batch_blocked_message IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO = 3572, MESSAGE_TEXT = @erp_batch_blocked_message;
+        END IF;
+        SET v_step_finished = NOW(6);
+        INSERT INTO `bot_call_log` (
+            run_id, batch_name, step_no, procedure_name, started_at, finished_at, duration_ms, status, created_at
+        )
+        VALUES (
+            v_run_id,
+            'batch_bot_call',
+            v_step_no,
+            v_current_proc,
+            v_step_started,
+            v_step_finished,
+            ROUND(TIMESTAMPDIFF(MICROSECOND, v_step_started, v_step_finished) / 1000, 3),
+            'OK',
             CURRENT_TIMESTAMP(6)
         );
 

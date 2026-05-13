@@ -1,10 +1,8 @@
 -- erp_batch_orchestrator: очередь батчей и worker-events для управляемого параллельного запуска.
--- Core-последовательность обычного цикла: batch_import -> batch_prework -> batch_recommend -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_5s -> batch_kernel -> batch_performance_log.
+-- Core-последовательность обычного цикла: batch_import -> batch_prework -> batch_recommend -> batch_bot_call -> batch_supervisor -> batch_import_check -> batch_integrity_check -> batch_pause_5s -> batch_kernel -> batch_performance_log.
 -- Heavy-цикл раз в 3 минуты: batch_assembly_batches.
 -- Heavy-цикл эксклюзивен за счёт общей очереди: другие батчи не ставятся в очередь, пока heavy-задачи pending/running.
--- Service-батчи (batch_bot_call) добавляются в каждый обычный цикл и могут идти параллельно с core,
--- кроме периода выполнения batch_kernel.
--- batch_kernel стартует только после завершения service-батчей текущего цикла.
+-- batch_bot_call включён в core-цепочку и выполняется строго по sequence_no.
 -- batch_performance_log запускается в конце цикла, когда batch-логи уже заполнены.
 -- Цикл с running-задачей старше 5 минут считается зависшим и освобождает очередь.
 -- batch_assembly_batches и batch_bot_call запускаются только через оркестратор (без отдельных таймеров).
@@ -173,9 +171,9 @@ proc: BEGIN
     INSERT INTO `erp_batch_queue` (`cycle_id`, `batch_name`, `batch_group`, `sequence_no`, `priority`)
     VALUES
             (v_cycle_id, 'batch_import', 'core', 10, 10),
-            (v_cycle_id, 'batch_bot_call', 'service', NULL, 12),
             (v_cycle_id, 'batch_prework', 'core', 15, 15),
             (v_cycle_id, 'batch_recommend', 'core', 20, 20),
+            (v_cycle_id, 'batch_bot_call', 'core', 25, 25),
             (v_cycle_id, 'batch_supervisor', 'core', 30, 30),
             (v_cycle_id, 'batch_import_check', 'core', 35, 35),
             (v_cycle_id, 'batch_integrity_check', 'core', 40, 40),
@@ -339,6 +337,7 @@ proc: BEGIN
               AND q.`batch_group` = 'core'
               AND q.`status` = 'pending'
               AND failed_job.`batch_group` = 'core'
+              AND failed_job.`batch_name` <> 'batch_bot_call'
               AND q.`sequence_no` > failed_job.`sequence_no`;
         END IF;
 
